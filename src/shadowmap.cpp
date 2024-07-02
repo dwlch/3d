@@ -113,8 +113,8 @@ void ShadowMap::update_uniforms(Shader &shader, Camera &camera, glm::vec3 &light
 
     // other uniforms.
     glUniform1f(glGetUniformLocation(shader.ID, "camera_distance"), camera.distance_offset);
+    glUniform1fv(glGetUniformLocation(shader.ID, "cascade_bounds"), 3, reinterpret_cast<GLfloat *>(cascade_bounds.data()));
     glUniform3fv(glGetUniformLocation(shader.ID, "light_pos"), 1, glm::value_ptr(light_pos));
-    glUniform3fv(glGetUniformLocation(shader.ID, "cascade_bounds"), 3, cascade_bounds.data());
     glUniformMatrix4fv(glGetUniformLocation(shader.ID, "light"), 3, GL_FALSE, reinterpret_cast<GLfloat *>(cascade_proj.data()));
     glUniformMatrix4fv(glGetUniformLocation(shader.ID, "camera"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
 }

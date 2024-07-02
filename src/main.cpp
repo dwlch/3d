@@ -1,6 +1,6 @@
 /*
 opengl simple game engine.
-start date : 22 08 2022.
+version start date : 22 08 2022.
 */
 
 // c++ includes.

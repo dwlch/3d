@@ -1,4 +1,3 @@
-# yoe game makefile
 EXE  			:= game
 
 CXX				:= g++
