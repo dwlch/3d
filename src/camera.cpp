@@ -57,68 +57,6 @@ void Camera::update(glm::vec3 target)
 	mvp         = projection * view;
 }
 
-// this version works but is not correct yet. keep it for now while working on other version.
-// void Camera::get_light_projection(std::array<glm::mat4, 4> &cascade_proj, glm::vec3 &light_direction)
-// {
-//     std::array<float, 4> cascade {
-//         NEAR_PLANE, 25.0f, 100.0f, 400.0f
-//     };
-
-//     int NUM_CASCADES = 3;
-
-//     // loop through each cascade.
-//     for (int i = 0; i < NUM_CASCADES; i++)
-//     {
-//         // get inverse of the camera view (at each cascades near and far bounds).
-//         glm::mat4 proj  = glm::perspective(glm::radians(FOV), aspect, cascade[i], cascade[i + 1]);
-//         glm::mat4 inv   = glm::inverse(proj * view);
-        
-//         // get 8 corners of a frustum (method from opengl tutorial site)
-//         std::vector<glm::vec4> corners;
-//         for (unsigned int x = 0; x < 2; x++)
-//         {
-//             for (unsigned int y = 0; y < 2; y++)
-//             {
-//                 for (unsigned int z = 0; z < 2; z++)
-//                 {
-//                     glm::vec4 pt = inv * glm::vec4(2.0f * x - 1.0f, 2.0f * y - 1.0f, 2.0f * z - 1.0f, 1.0f);
-//                     corners.push_back(pt / pt.w);
-//                 }
-//             }
-//         }
-
-//         // get average of all corners as target / centre of frustum.
-//         glm::vec3 frustum_centre = glm::vec3(0.0f);
-//         for (int j = 0; j < 8; j++)
-//         {
-//             frustum_centre += glm::vec3(corners[j]);
-//         }
-//         frustum_centre /= corners.size();
-
-//         // get light view matrix respetive to light direction and centre of fustrum.
-//         glm::mat4 light_view = glm::lookAt(frustum_centre + light_direction, frustum_centre, up);
-        
-//         // min and max bounds.
-//         glm::vec3 ortho_min(std::numeric_limits<float>::max());
-//         glm::vec3 ortho_max(std::numeric_limits<float>::lowest());
-//         for (size_t j = 0; j < 8; j++)
-//         {
-//             corners[j] = light_view * corners[j];
-
-//             ortho_min.x = std::min(ortho_min.x, corners[j].x);
-//             ortho_max.x = std::max(ortho_max.x, corners[j].x);
-//             ortho_min.y = std::min(ortho_min.y, corners[j].y);
-//             ortho_max.y = std::max(ortho_max.y, corners[j].y);
-//             ortho_min.z = std::min(ortho_min.z, corners[j].z);
-//             ortho_max.z = std::max(ortho_max.z, corners[j].z);
-//         }
-
-//         // output the light projection.
-//         glm::mat4 light_proj    = glm::ortho(ortho_min.x, ortho_max.x, ortho_min.y, ortho_max.y, -ortho_max.z, -ortho_min.z);
-//         cascade_proj[i]         = light_proj * light_view;
-//     }
-// }
-
 glm::vec3 transform_by_matrix(const glm::vec3 &point, const glm::mat4 &matrix)
 {
     glm::vec4 temp = matrix * glm::vec4(point, 1.0f);

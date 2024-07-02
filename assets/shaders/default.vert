@@ -28,10 +28,11 @@ void main()
     fragColor       = vertexColor;
     fragTexCoord    = vertexTexCoord;
 
-    for (int i = 0 ; i < NUM_CASCADES ; i++) {
+    for (int i = 0 ; i < NUM_CASCADES ; i++)
+    {
         fragPosLight[i] = light[i] * vec4(fragPosition, 1.0);
     }
-    
+
 	gl_Position     = camera * vec4(fragPosition, 1.0); // position from camera.
     // ClipSpacePosZ   = gl_Position.z;
 }

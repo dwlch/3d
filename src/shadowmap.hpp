@@ -10,8 +10,8 @@ struct ShadowMap
 {
     std::array<GLuint, 3> depth_maps;
     std::array<glm::mat4, 3> cascade_proj;
-    std::array<float, 4> cascade_bounds {
-        1.0f, 20.0f, 80.0f, 400.0f
+    std::array<float, 3> cascade_bounds {
+        25.0f, 100.0f, 400.0f
     };
 
     int size;

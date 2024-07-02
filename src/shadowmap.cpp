@@ -54,7 +54,8 @@ glm::mat4 ShadowMap::get_cascades(Camera &camera, glm::vec3 &light_direction)
     float max_z = std::numeric_limits<float>::lowest();
 
     // get inverse of the camera view (at specific near and far bounds).
-    glm::mat4 proj  = glm::perspective(glm::radians(camera.FOV), camera.aspect, cascade_bounds[0], cascade_bounds[1]);
+    // unsure on the last 2 params here. near and far plane, but unsure if it needs to be near and far of each cascade or camera itself.
+    glm::mat4 proj  = glm::perspective(glm::radians(camera.FOV), camera.aspect, 1.0f, cascade_bounds[2]);
     glm::mat4 inv   = glm::inverse(proj * camera.view);
 
     // get frustum corners (method from opengl tutorial site)
@@ -113,6 +114,7 @@ void ShadowMap::update_uniforms(Shader &shader, Camera &camera, glm::vec3 &light
     // other uniforms.
     glUniform1f(glGetUniformLocation(shader.ID, "camera_distance"), camera.distance_offset);
     glUniform3fv(glGetUniformLocation(shader.ID, "light_pos"), 1, glm::value_ptr(light_pos));
+    glUniform3fv(glGetUniformLocation(shader.ID, "cascade_bounds"), 3, cascade_bounds.data());
     glUniformMatrix4fv(glGetUniformLocation(shader.ID, "light"), 3, GL_FALSE, reinterpret_cast<GLfloat *>(cascade_proj.data()));
     glUniformMatrix4fv(glGetUniformLocation(shader.ID, "camera"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
 }
