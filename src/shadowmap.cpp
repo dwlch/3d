@@ -43,60 +43,73 @@ ShadowMap::ShadowMap(int size)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-// calculate orthographic projection for shadow map relative to camera view frustum.
-glm::mat4 ShadowMap::get_cascades(Camera &camera, glm::vec3 &light_direction)
+glm::vec3 transform_by_matrix(const glm::vec3 &point, const glm::mat4 &matrix)
 {
-    float min_x = std::numeric_limits<float>::max();
-    float max_x = std::numeric_limits<float>::lowest();
-    float min_y = std::numeric_limits<float>::max();
-    float max_y = std::numeric_limits<float>::lowest();
-    float min_z = std::numeric_limits<float>::max();
-    float max_z = std::numeric_limits<float>::lowest();
+    glm::vec4 temp = matrix * glm::vec4(point, 1.0f);
+    return glm::vec3(temp);
+}
 
-    // get inverse of the camera view (at specific near and far bounds).
-    // unsure on the last 2 params here. near and far plane, but unsure if it needs to be near and far of each cascade or camera itself.
-    glm::mat4 proj  = glm::perspective(glm::radians(camera.FOV), camera.aspect, 1.0f, cascade_bounds[2]);
-    glm::mat4 inv   = glm::inverse(proj * camera.view);
+void ShadowMap::get_light_projection(Camera &camera, glm::vec3 &light_direction)
+{
+    std::array<float, 4> cascade {
+        camera.NEAR_PLANE, cascade_bounds[0], cascade_bounds[1], cascade_bounds[2]
+    };
 
-    // get frustum corners (method from opengl tutorial site)
-    std::vector<glm::vec4> corners;
-    for (unsigned int x = 0; x < 2; x++)
+    for (int i = 0; i < NUM_CASCADES; i++)
     {
-        for (unsigned int y = 0; y < 2; y++)
+        // get inverse of the camera view (at each cascades near and far bounds).
+        glm::mat4 proj  = glm::perspective(glm::radians(camera.FOV), camera.aspect, cascade[i], cascade[i + 1]);
+        glm::mat4 inv   = glm::inverse(proj * camera.view);
+        
+        // get 8 corners of the frustum in world space.
+        std::vector<glm::vec3> corners = {
+            glm::vec3(-1.0f,  1.0f, 0.0f),
+            glm::vec3( 1.0f,  1.0f, 0.0f),
+            glm::vec3( 1.0f, -1.0f, 0.0f),
+            glm::vec3(-1.0f, -1.0f, 0.0f),
+            glm::vec3(-1.0f,  1.0f, 1.0f),
+            glm::vec3( 1.0f,  1.0f, 1.0f),
+            glm::vec3( 1.0f, -1.0f, 1.0f),
+            glm::vec3(-1.0f, -1.0f, 1.0f),
+        };
+
+        // transform corners into light space(?). i think.
+        for( int j = 0; j < 8; j++)
         {
-            for (unsigned int z = 0; z < 2; z++)
-            {
-                glm::vec4 pt = inv * glm::vec4(2.0f * x - 1.0f, 2.0f * y - 1.0f, 2.0f * z - 1.0f, 1.0f);
-                corners.push_back(pt / pt.w);
-            }
+            glm::vec4 temp  = inv * glm::vec4(corners[j], 1.0f);
+            corners[j]      = glm::vec3(temp / temp.w);
         }
-    }
 
-    // get average of all corners as target / centre of frustum.
-    glm::vec3 target = glm::vec3(0.0f);
-    for (const auto &corner : corners)
-    {
-        target += glm::vec3(corner.x, corner.y, corner.z);
-    }
-    
-    // get light view matrix respetive to light direction and target of fustrum.
-    target /= corners.size();
-    glm::mat4 light_view = glm::lookAt(target + light_direction, target, camera.up);
-    for (size_t i = 0; i < 8; i++)
-    {
-        glm::vec4 lightspace = light_view * corners[i];
+        // get average of all corners as target / centre of frustum.
+        glm::vec3 frustum_centre = glm::vec3(0.0f);
+        for (int j = 0; j < 8; j++)
+        {
+            frustum_centre += corners[j];
+        }
+        frustum_centre *= (1.0f / 8.0f);
 
-        min_x = std::min(min_x, lightspace.x);
-        max_x = std::max(max_x, lightspace.x);
-        min_y = std::min(min_y, lightspace.y);
-        max_y = std::max(max_y, lightspace.y);
-        min_z = std::min(min_z, lightspace.z);
-        max_z = std::max(max_z, lightspace.z);
-    }
+        // get the radius of a bounding sphere surrounding the frustum corners.
+        float radius = 0.0f;
+        for(int j = 0; j < 8; j++)
+        {
+            float dist  = glm::length(corners[j] - frustum_centre);
+            radius      = std::max(radius, dist);
+        }
+        radius = std::ceil(radius * 16.0f) / 16.0f;
 
-    // output the light projection.
-    glm::mat4 light_proj = glm::ortho(min_x, max_x, min_y, max_y, -max_z, -min_z);
-    return light_proj * light_view;
+        float texels        = static_cast<float>(size) / (radius * 2.0f);
+        glm::mat4 look_at   = glm::lookAt(-light_direction, glm::vec3(0.0f), camera.up) * glm::mat4(texels);
+        frustum_centre      = transform_by_matrix(frustum_centre, look_at);
+        frustum_centre.x    = glm::floor(frustum_centre.x);
+        frustum_centre.y    = glm::floor(frustum_centre.y);
+        frustum_centre      = transform_by_matrix(frustum_centre, glm::inverse(look_at));
+
+        // get final matrix for cascade.
+        glm::vec3 light_target  = frustum_centre - (light_direction * (radius * 2.0f));
+        glm::mat4 light_view    = glm::lookAt(frustum_centre, light_target, camera.up);
+        glm::mat4 light_proj    = glm::ortho(-radius, radius, -radius, radius, -radius * 6.0f, radius * 6.0f);
+        cascade_proj[i]         = light_proj * light_view;
+    }
 }
 
 void ShadowMap::update_uniforms(Shader &shader, Camera &camera, glm::vec3 &light_pos)

@@ -64,5 +64,4 @@ struct Camera
     Camera();
     void get_input();                           // get input + calc orientation using input.
     void update(glm::vec3 target);              // update the camera view matrix.
-    void get_light_projection(std::array<glm::mat4, 3> &cascade_proj, glm::vec3 &light_direction);
 };

@@ -118,7 +118,7 @@ int main(void)
         
         // get shadowmap cascade matrices.
         glm::vec3 light_direction = glm::vec3(glm::normalize(light_pos - light_target));
-        camera.get_light_projection(shadowmap.cascade_proj, light_direction);
+        shadowmap.get_light_projection(camera, light_direction);
 
         // do for each cascade in the shadowmap array.
         for (int i = 0; i < NUM_CASCADES; i++)

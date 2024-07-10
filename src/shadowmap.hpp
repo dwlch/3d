@@ -11,13 +11,14 @@ struct ShadowMap
     std::array<GLuint, 3> depth_maps;
     std::array<glm::mat4, 3> cascade_proj;
     std::array<float, 3> cascade_bounds {
-        25.0f, 100.0f, 400.0f
+        32.0f, 128.0f, 512.0f
     };
 
     int size;
     GLuint FBO;
 
     ShadowMap(int size);
-    glm::mat4 get_cascades(Camera &camera, glm::vec3 &light_direction);
+    void get_light_projection(Camera &camera, glm::vec3 &light_direction);
     void update_uniforms(Shader &shader, Camera &camera, glm::vec3 &light_pos);
+    
 };
