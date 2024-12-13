@@ -12,7 +12,7 @@
 
 #define GJK_MAX_ITERATIONS 128                  // limit of GJK iterations.
 #define EPA_MAX_ITERATIONS 255                  // limit of EPA iterations.
-#define EPA_ACCURACY 0.0001f                    // 'close enough' margin. 0.001f 100% safe, 0.000f safe i think.
+#define EPA_ACCURACY 0.0001f                    // 'close enough' margin. 0.001f 100% safe, 0.0001f safe i think.
 const int EPA_MAX_EDGES = 128;                  // allocates space in edge array.
 const int EPA_MAX_FACES = EPA_MAX_EDGES * 2;    // allocates space in face array.
 
@@ -110,7 +110,7 @@ struct CylinderCollider : public Collider
 // not sure if this ever requires indices to get correct order or doesn't matter.
 struct MeshCollider : public Collider
 {
-    glm::vec3 colour    = glm::vec3(0.9f, 0.5f, 0.3f);
+    glm::vec3 colour = glm::vec3(0.9f, 0.5f, 0.3f);
     Mesh mesh;
 
     // default constructor.
@@ -119,14 +119,14 @@ struct MeshCollider : public Collider
     // draw mesh wrapper, simply draws the mesh used for mesh collider input.
     void draw(const Shader &shader) override
     {
-        mesh.draw(GL_TRIANGLES, glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader, colour);
+        // mesh.draw(GL_TRIANGLES, glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader, colour);
     }
 
     // loop through evert vertex position vec3,
     // get the vertex in the mesh that is furthest in direction.
     glm::vec3 furthest_point(glm::vec3 direction) const
     {
-        glm::vec3 point = glm::vec3(0.0f);;
+        glm::vec3 point         = glm::vec3(0.0f);;
         float furthest_distance = -FLT_MAX;
 
         for (size_t i = 0; i < mesh.vertices.size(); i++)
@@ -138,6 +138,40 @@ struct MeshCollider : public Collider
                 point               = mesh.vertices[i].position;
             }
         }
+        return point;
+    };
+};
+
+struct NewMeshCollider : public Collider
+{
+    glm::vec3 colour = glm::vec3(0.9f, 0.5f, 0.3f);
+    MeshPrimitive mesh;
+
+    // default constructor.
+    NewMeshCollider(MeshPrimitive &mesh) : mesh(mesh) {}
+
+    // draw mesh wrapper, simply draws the mesh used for mesh collider input.
+    void draw(const Shader &shader) override
+    {
+        // model.draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader, colour);
+    }
+
+    // loop through evert vertex position vec3,
+    // get the vertex in the mesh that is furthest in direction.
+    glm::vec3 furthest_point(glm::vec3 direction) const
+    {
+        glm::vec3 point         = glm::vec3(0.0f);;
+        float furthest_distance = -FLT_MAX;
+
+        // for (size_t i = 0; i < mesh.vertices.size(); i++)
+        // {
+        //     float distance = glm::dot(mesh.vertices[i].position, direction);
+        //     if (distance > furthest_distance)
+        //     {
+        //         furthest_distance   = distance;
+        //         point               = mesh.vertices[i].position;
+        //     }
+        // }
         return point;
     };
 };

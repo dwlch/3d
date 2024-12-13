@@ -154,7 +154,7 @@ bool GJK(const Collider *a, const Collider *b, std::vector<glm::vec3> &simplex)
     direction = -support;       // begin with the direction from the simplex towards the origin.
 
     // rather than using while (true), this prevents infinite loops when dealing with curved surfaces.
-    for (unsigned int i = 0; i < GJK_MAX_ITERATIONS; i++)
+    for (unsigned int i = 0; i < GJK_MAX_ITERATIONS; ++i)
     {
         support = Support(a, b, direction);         // get a new support point using the current search direction.
         if (glm::dot(support, direction) < 0.0f)    // no intersection if origin is beyond support point.
@@ -162,7 +162,7 @@ bool GJK(const Collider *a, const Collider *b, std::vector<glm::vec3> &simplex)
             break; 
         }
         simplex.push_back(support);                 // insert new support into simplex.
-        if(do_simplex(simplex, direction))          // returns true if simplex contains the origin in the direction given.
+        if (do_simplex(simplex, direction))         // returns true if simplex contains the origin in the direction given.
         {
             return true;
         } 
@@ -188,7 +188,7 @@ Face get_closest_face(const Polytope &polytope)
     closest_face.normal     = closest_face.normal;
 
     // check every face in the polytope.
-    for (size_t i = 0; i < polytope.face_count; i++)
+    for (size_t i = 0; i < polytope.face_count; ++i)
     {
         // get a new face to compare against closest face.
         Face face       = polytope.faces[i];
@@ -223,11 +223,10 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
     add_to_polytope(polytope, Face(a, b, d));
     add_to_polytope(polytope, Face(b, c, d));
 
-    
     Results results;    // combined angle of collision * depth.
     Face closest_face;  // store most recent closest face.
 
-    for (unsigned int i = 0; i < EPA_MAX_ITERATIONS; i++)
+    for (unsigned int i = 0; i < EPA_MAX_ITERATIONS; ++i)
     {
         closest_face    = get_closest_face(polytope);                           // we get the closest face on the polytope.
         vec3 support    = Support(collider_a, collider_b, closest_face.normal); // get support in direction of closest face.
@@ -247,20 +246,20 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
         int edges_count = 0;
 
         // find all triangles that are facing the support.
-        for (size_t i = 0; i < polytope.face_count; i++)
+        for (size_t i = 0; i < polytope.face_count; ++i)
         {
             // check if the face is 'visible' from support, if so needs to be removed.
             Face face = polytope.faces[i];
             if (same_direction(face.normal, (support - face.point[0])))
             {
                 // add edges of removed face to array, then remove any duplicate edges.
-                for (int j = 0; j < 3; j++)
+                for (int j = 0; j < 3; ++j)
                 {
                     std::pair<vec3, vec3> edge  = std::pair<vec3, vec3>(face.point[j], face.point[(j + 1) % 3]);
                     bool is_duplicate           = false;
 
                     // loop through every edge in the edges array.
-                    for (int k = 0; k < edges_count; k++)
+                    for (int k = 0; k < edges_count; ++k)
                     {
                         // if both points in edge i equal the edge we are checking, remove it.
                         if (vec3_equals(edges[k].first, edge.second) && vec3_equals(edges[k].second, edge.first))
@@ -275,7 +274,11 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
                     // if edge is not duplicate, ie is unique, add it to the edges array.
                     if (!is_duplicate)
                     {
-                        if(edges_count >= EPA_MAX_EDGES) break;
+                        if (edges_count >= EPA_MAX_EDGES)
+                        {
+                            //cout << "max edges reached: " << edges_count << "\n";
+                            break;
+                        }
                         edges[edges_count] = edge;
                         edges_count++;
                     }
@@ -290,9 +293,13 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
 
         // finally, reconstruct polytope with support point.
         // the new face is always the 2 points on the edge to add, and the expand point (support).
-        for(int i = 0; i < edges_count; i++)
+        for (int i = 0; i < edges_count; ++i)
         {
-            if(polytope.face_count >= EPA_MAX_FACES) break;
+            if (polytope.face_count >= EPA_MAX_FACES) 
+            {   
+                //cout << "max faces reached: " << polytope.face_count << "\n";
+                break;
+            }
             Face face = Face(edges[i].first, edges[i].second, support);
             
             // maintain CCW winding by checking if normal is incorrect.
@@ -340,12 +347,24 @@ Results is_collision(const Collider *a, const Collider *b)
 void get_colliders_from_level(Model &level, std::vector<std::unique_ptr<Collider>> &colliders)
 {
     colliders.clear();
-    for (size_t i = 0; i < level.meshes.size(); i++)
+    for (size_t i = 0; i < level.meshes.size(); ++i)
     {
-        if (level.meshes[i].collider)
+        if (level.meshes[i].type == 0)
         {
             colliders.push_back(std::move(std::unique_ptr<Collider>(new MeshCollider(level.meshes[i]))));
         }  
     }
+
+    // so rather than just looping thru mesh, loop thru nodes, then each node's mesh primitives.
+    // for (auto node : level.nodes)
+    // {
+    //     for (auto mesh : node->mesh_primitives)
+    //     {
+    //         colliders.push_back(std::move(std::unique_ptr<Collider>(new MeshCollider(level.meshes[i]))));
+    //     }
+    // }
+
+
+
     std::cout << "level loaded!" << "\n\n";
 }

@@ -7,7 +7,7 @@
 #include <vector>
 #include <array>
 
-Camera::Camera()
+Camera::Camera(int size)
 {
 
 }

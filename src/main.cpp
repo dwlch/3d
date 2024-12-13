@@ -6,8 +6,8 @@ version start date : 22 08 2022.
 // c++ includes.
 #include <iostream>
 #include <vector>
-#include <array>        // shader array.
-#include <memory>       // collision array.
+#include <array>        // for shader array.
+#include <memory>       // for collision array.
 
 // GL includes.
 #include "glad.h"
@@ -71,8 +71,8 @@ int main(void)
     glCullFace(GL_BACK);                            // cull back faces.
     glCullFace(GL_CCW);                             // counter clockwise indice order.
     
-    std::array<Shader, 6> shader = {                                // array of all shaders, 0 is always screen/post-process shader.
-        Shader(GL_FILL, "g_buffer.vert",    "g_buffer.frag"),       // gbuffer (might not bother with this).
+    // can probs trim these down, dont want to do any fancy shaders anymore rlly, just shadows.
+    std::array<Shader, SHADER_COUNT> shader = {                     // array of all shaders, 0 is always screen/post-process shader.
         Shader(GL_FILL, "framebuffer.vert", "framebuffer.frag"),    // post process framebuffer shader.
         Shader(GL_FILL, "shadow_map.vert",  "shadow_map.frag"),     // shadowmap shader.
         Shader(GL_FILL, "default.vert",     "default.frag"),        // default material shader.
@@ -81,6 +81,7 @@ int main(void)
     };
 
     // array of levels, which are just gltf files.
+    // should probably do it recursively like "scene_" & i etc.
     std::array<Model, LEVEL_COUNT> level = {
         Model("scene_0000.gltf"),
         Model("scene_0001.gltf")
@@ -94,61 +95,66 @@ int main(void)
 
     // mandatory inits.
     Player player;
-    Camera camera;
+    Camera camera(SHADOWMAP_SIZE);
     ShadowMap shadowmap(SHADOWMAP_SIZE);
     ScreenTexture screen;
     
-    // maybe need to make a 'light' class that has these properties?
-    glm::vec3 light_pos     = glm::vec3(0.7f, 1.0f, 0.3f);
-    glm::vec3 light_target  = glm::vec3(0.0f);
+    // maybe should make a 'light' struct that has these properties?
+    glm::vec3 light_pos         = glm::vec3(0.7f, 1.0f, 0.3f);
+    glm::vec3 light_target      = glm::vec3(0.0f);
+    float dt                    = 0.01f;
 
     while(!glfwWindowShouldClose(window))
     {
-        // UPDATE.
-        camera.get_input();                     // camera input, calculates camera orientation vec3.
-        player.update(colliders, camera);       // player input and movement, sent a vector of colliders.
-        camera.update(player.camera_lookat);    // update camera matrix using target position.
-
-        // DRAW.
-        // shadowmap pass. could this be all moved into shadowmap.cpp? 
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glViewport(0, 0, shadowmap.size, shadowmap.size);
-        glUseProgram(shader[2].ID);
-        glPolygonOffset(6.0f, 1.0f); // factor, unit.
-        
-        // get shadowmap cascade matrices.
-        glm::vec3 light_direction = glm::vec3(glm::normalize(light_pos - light_target));
-        shadowmap.get_light_projection(camera, light_direction);
-
-        // do for each cascade in the shadowmap array.
-        for (int i = 0; i < NUM_CASCADES; i++)
+        // update step.
         {
-            glBindFramebuffer(GL_FRAMEBUFFER, shadowmap.FBO);
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowmap.depth_maps[i], 0);
-            glUniformMatrix4fv(glGetUniformLocation(shader[2].ID, "light"), 1, GL_FALSE, glm::value_ptr(shadowmap.cascade_proj[i]));
-            glClear(GL_DEPTH_BUFFER_BIT);       
-
-            // render geometry to shadow map.
-            player.draw(shader[2], shader[2]);
-            level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[2], glm::vec3(1.0f));
+            camera.get_input();                     // camera input, calculates camera orientation vec3.
+            player.update(dt, colliders, camera);   // player input and movement, sent a vector of colliders.
+            camera.update(player.camera_lookat);    // update camera matrix using target position.
         }
 
-        // render pass.
-        glPolygonOffset(0, 0);
-        glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-        glBindFramebuffer(GL_FRAMEBUFFER, screen.FBO);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
-        // draw scene to post-process framebuffer with shadows applied.
-        // can probably move the shadowmap update stuff into the draw function itself, as this always happens when a draw occurs anyway?
-        shadowmap.update_uniforms(shader[4], camera, light_pos);
-        player.draw(shader[4], shader[5]);
+        // draw step.
+        {
+            // shadowmap pass. could this be all moved into shadowmap.cpp? 
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glViewport(0, 0, shadowmap.size, shadowmap.size);
+            glUseProgram(shader[SHADER_SHADOWMAP].ID);
+            glPolygonOffset(6.0f, 1.0f); // factor, unit.
+            
+            // get shadowmap cascade matrices.
+            glm::vec3 light_direction = glm::vec3(glm::normalize(light_pos - light_target));
+            shadowmap.get_light_projection(camera, light_direction);
 
-        shadowmap.update_uniforms(shader[3], camera, light_pos);
-        level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[3], glm::vec3(1.0f));
+            // do for each cascade in the shadowmap array.
+            for (int i = 0; i < NUM_CASCADES; ++i)
+            {
+                glBindFramebuffer(GL_FRAMEBUFFER, shadowmap.FBO);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowmap.depth_maps[i], 0);
+                glUniformMatrix4fv(glGetUniformLocation(shader[SHADER_SHADOWMAP].ID, "light"), 1, GL_FALSE, glm::value_ptr(shadowmap.cascade_proj[i]));
+                glClear(GL_DEPTH_BUFFER_BIT);       
 
-        // finally, draw the screen framebuffer.
-        screen.draw(shader[1]);
+                // render geometry to shadow map.
+                player.draw(shader[SHADER_SHADOWMAP], shader[SHADER_SHADOWMAP]);
+                level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_SHADOWMAP], glm::vec3(1.0f));
+            }
+
+            // render pass.
+            glPolygonOffset(0, 0);
+            glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+            glBindFramebuffer(GL_FRAMEBUFFER, screen.FBO);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            
+            // draw scene to post-process framebuffer with shadows applied.
+            // can probably move the shadowmap update stuff into the draw function itself, as this always happens when a draw occurs anyway?
+            shadowmap.update_uniforms(shader[SHADER_CEL], camera, light_pos);
+            player.draw(shader[SHADER_CEL], shader[SHADER_LINE]);
+
+            shadowmap.update_uniforms(shader[SHADER_DEFAULT], camera, light_pos);
+            level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_DEFAULT], glm::vec3(1.0f));
+
+            // finally, draw the screen framebuffer.
+            screen.draw(shader[SHADER_FRAMEBUFFER]);
+        }
 
         // swap the back buffer with the front buffer + poll IO events.
 		glfwSwapBuffers(window);

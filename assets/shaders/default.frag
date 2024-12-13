@@ -1,35 +1,32 @@
 #version 330 core
 
-#define NUM_CASCADES 3
+#define NUM_CASCADES    3
+#define NEAR            1.0
+#define FAR             1000.0
 
-// input vertex attributes (from vertex shader)
-in vec3 fragPosition;   // fragment position.
-in vec3 fragNormal;     // fragment normal.
-in vec3 fragColor;      // colour of the fragment.
-in vec2 fragTexCoord;   // fragment texture coordinates.
-in vec4 fragPosLight[NUM_CASCADES];   // positions from from light perspective.
-in float ClipSpacePosZ;
+in vec3 frag_position;                      // fragment position.
+in vec3 frag_normal;                        // fragment normal.
+in vec3 frag_color;                         // colour of the fragment.
+in vec2 frag_texcoord;                      // fragment texture coordinates.
+in vec4 frag_shadowcoords[NUM_CASCADES];    // shadowmap coordinates.
 
-uniform sampler2D tex0;                         // material texture.
-uniform sampler2D shadow_map[NUM_CASCADES];     // shadow map texture, in 3 different resolutions.
-uniform float cascade_bounds[NUM_CASCADES];
-uniform float camera_distance;
-uniform vec3 albedo;                    // base colour.
-uniform vec3 light_pos;                 // directional light position.
+uniform sampler2D tex0;                     // material texture.
+uniform sampler2D shadow_map[NUM_CASCADES]; // shadow map texture, in 3 different resolutions.
+uniform float cascade_bounds[NUM_CASCADES]; // cascade boundaries array.
+uniform float camera_distance;              // distance from player to camera.
+uniform vec3 albedo;                        // base colour, used for 'ingame' colours.
+uniform vec3 light_pos;                     // directional light position.
 
-out vec4 final_color;            // output fragment color.
+out vec4 final_color;
 
-#define NEAR    1.0
-#define FAR     1000.0
-
+// returns which shadowmap cascade the fragment is inside.
 int get_cascade()
 {
-    // get distance from current fragment to the camera.
     float d = gl_FragCoord.z / gl_FragCoord.w;
-
     // check from closest to second furthest away.
-    for (int i = 0; i < NUM_CASCADES - 1; i++)
+    for (int i = 0; i < NUM_CASCADES - 1; ++i)
     {
+        // check distance from current fragment to the camera vs current cascade bound.
         if (d < cascade_bounds[i])
         {
             return i;
@@ -48,9 +45,9 @@ float bilinear_pcf(vec3 shadow_coords, int cascade_index)
     vec2 frac       = fract(shadow_coords.xy * textureSize(shadow_map[cascade_index], 0) + 0.5);
     vec2 texel_size = 1.0 / textureSize(shadow_map[cascade_index], 0);
     
-    for (int x = -1; x <= 1; x++)
+    for (int x = -1; x <= 1; ++x)
     {
-        for (int y = -1; y <= 1; y++)
+        for (int y = -1; y <= 1; ++y)
         {
             vec2 offset = vec2(x, y) * texel_size;
             vec4 temp   = textureGather(shadow_map[cascade_index], shadow_coords.xy + offset);
@@ -69,15 +66,41 @@ float bilinear_pcf(vec3 shadow_coords, int cascade_index)
 float get_shadow(float intensity)
 {
     int current_map     = get_cascade();
-    vec3 shadow_coords  = ((fragPosLight[current_map].xyz / fragPosLight[current_map].w) + 1.0) / 2.0;
+    vec3 shadow_coords  = ((frag_shadowcoords[current_map].xyz / frag_shadowcoords[current_map].w) + 1.0) / 2.0;
 
-    // // early exit.
+    // early exit.
     if (shadow_coords.z > 1.0)
     {
         return 1.0;
     }
+    // ok so i think to blend between them, you get the next cascade up, so ie
+    // get cascades 0 and 1, and then by some factor, blend between them. probs w smoothstep.
 
-    return clamp(bilinear_pcf(shadow_coords, current_map), intensity, 1.0);
+    float shadow = bilinear_pcf(shadow_coords, current_map);
+
+    // // smoothing / blend.
+    // float blend_threshold = 0.1;
+
+    // float nextsplit     = cascade_bounds[current_map + 1];
+    // float splitsize     = current_map == (NUM_CASCADES - 1) ? nextsplit : nextsplit - cascade_bounds[current_map];
+    // float fade_factor   = (nextsplit - ((gl_FragCoord.z / gl_FragCoord.w))) / splitsize;
+
+
+
+    // if(fade_factor <= blend_threshold && current_map != NUM_CASCADES - 1)
+    // {
+
+    //     vec3 next_shadow_coords     = ((frag_shadowcoords[current_map + 1].xyz / frag_shadowcoords[current_map + 1].w) + 1.0) / 2.0;
+    //     float next_shadow           = bilinear_pcf(next_shadow_coords, current_map + 1);
+
+
+    //     float mix_amount    = smoothstep(0.0, blend_threshold, fade_factor);
+    //     shadow              = mix(next_shadow, shadow, mix_amount);
+    // }
+
+
+
+    return clamp(shadow, intensity, 1.0);
 }
 
 // get depth fog value.
@@ -95,13 +118,14 @@ void main()
     vec3 light_col      = vec3(1.2);
 
     // normal dot light.
-    float NdotL         = max(dot(fragNormal, light_dir), 0.0);
-    float shadow_smooth = 0.4;
-    float intensity     = smoothstep(0, shadow_smooth, NdotL);
-
+    float NdotL             = max(dot(frag_normal, light_dir), 0.0);
+    float shadow_smooth     = 0.4;
+    float shadow_strength   = 0.3;
+    float intensity         = smoothstep(0, shadow_smooth, NdotL);
+    
     // get the ambient and diffuse terms.
-    vec3 emission       = texture(tex0, fragTexCoord).rgb * albedo;
-    vec3 diffuse        = texture(tex0, fragTexCoord).rgb * intensity * light_col;
+    vec3 emission       = texture(tex0, frag_texcoord).rgb * albedo;
+    vec3 diffuse        = texture(tex0, frag_texcoord).rgb * intensity * light_col;
     
     // fog calculation using depth buffer.
     // get fog depth according to steepness of gradient and distance offset.
@@ -109,6 +133,8 @@ void main()
     vec3 fog_color      = fog_depth * vec3(1.5);
 
     // combine all terms: emission + diffuse, shadows, then fog.
-    final_color = vec4((emission + diffuse) * (get_shadow(0.3)) * (1.0 - fog_depth) + fog_color, 1.0);
+    // (emission + diffuse) or (fragNormal)
+
+    final_color = vec4((emission + diffuse) * (get_shadow(shadow_strength)) * (1.0 - fog_depth) + fog_color, 1.0);
 }
 

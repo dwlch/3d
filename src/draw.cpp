@@ -10,91 +10,92 @@
 
 #define MODELS_PATH     "./assets/models/"
 #define TEXTURES_PATH   "./assets/textures/"
+#define ERROR_PNG       "error.png"
 using std::cout;
 
-// link vertex attributes such as position, normals, and texcoords to VBO.
-void link_attrib(GLuint layout, GLuint num_components, GLenum type, GLsizeiptr stride, void* offset, GLuint VBO)
+glm::mat4 Node::get_local_matrix()
 {
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glEnableVertexAttribArray(layout);
-    glVertexAttribPointer(layout, num_components, type, GL_FALSE, stride, offset);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+	return glm::translate(glm::mat4(1.0f), translation) * glm::mat4(rotation) * glm::scale(glm::mat4(1.0f), scale) * matrix;
 }
 
-Mesh::Mesh(std::vector<Vertex> &vertices, std::vector<GLuint> &indices, std::vector<Texture> &textures)
+glm::mat4 get_node_matrix(Node *node)
 {
-    // set local mesh vectors to input for use in draw function.
-    Mesh::vertices  = vertices;
-	Mesh::indices   = indices;
-    Mesh::textures  = textures;
+	glm::mat4 node_matrix   = node->get_local_matrix();
+	Node *current_parent    = node->parent;
 
-    glGenVertexArrays(1, &VAO); // generate VAO.
-    glBindVertexArray(VAO);     // bind VAO.
-
-    // generate VBO, bind, then pass vertices vector.
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
-
-    // generate EBO, bind, then pass indices vector.
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-
-    // link vertex attributes (position, normal, colour, texcoords)..
-    link_attrib(0, 3, GL_FLOAT, sizeof(Vertex), (void*)(0), VBO);                   // position.
-    link_attrib(1, 3, GL_FLOAT, sizeof(Vertex), (void*)(3 * sizeof(float)), VBO);   // normal.
-    link_attrib(2, 3, GL_FLOAT, sizeof(Vertex), (void*)(6 * sizeof(float)), VBO);   // colour.
-    link_attrib(3, 2, GL_FLOAT, sizeof(Vertex), (void*)(9 * sizeof(float)), VBO);   // texture.
-
-    glBindVertexArray(0);                       // unbind VAO.
-    glBindBuffer(GL_ARRAY_BUFFER, 0);           // unbind VBO.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);   // unbind EBO.
+	while (current_parent)
+	{
+		node_matrix    = current_parent->get_local_matrix() * node_matrix;
+		current_parent = current_parent->parent;
+	}
+	return node_matrix;
 }
 
-// draw the supplied mesh with given parameters.
-void Mesh::draw(GLenum mode, glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, glm::vec3 colour)
+void Model::draw_node(Node node, GLenum mode, glm::mat4 transform, Shader shader)
 {
-    glUseProgram(shader.ID);    // activate the shader being used to draw this model. (potential for multiple shaders per model?)
-    glBindVertexArray(VAO);     // bind the VBO with the vertexes from the mesh.
-
-    // (T*R*S) translation, rotation, and scale of mesh as a single matrix.
-    glm::mat4 mvp = translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
-
-    
-    // atm this loop does nothing as textures only ever has 1 element.
-    // TODO: add multiple textures per mesh? atm each texture is rendered as seperate meshes, which seems ok?
-    // for (size_t i = 0; i < textures.size(); i++)
-    // {
-    //     glActiveTexture(GL_TEXTURE0);
-    //     glBindTexture(GL_TEXTURE_2D, textures[i].ID);
-    //     glUniform1i(glGetUniformLocation(shader.ID, "tex0"), 0);
-    // }
-
-    // bind texture from mesh.
-    if (!textures.empty())
+    if (node.mesh_primitives.size() > 0)
     {
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, textures[0].ID);
-        glUniform1i(glGetUniformLocation(shader.ID, "tex0"), 0);
+        // node matrix combined with model transform.
+        glm::mat4 mvp = transform * get_node_matrix(&node);
+
+        // loop through each mesh in the node (usually just one atm).
+        for (MeshPrimitive &mesh : node.mesh_primitives)
+        {
+            if (mesh.index_count > 0)
+            {
+                // bind the VAO with the vertexes from the mesh.
+                glBindVertexArray(mesh.VAO);    
+                glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(mvp));   // mesh view projection matrix.
+
+                if (mesh.material_index > -1)
+                {
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, textures[mesh.material_index].ID);
+                    glUniform1i(glGetUniformLocation(shader.ID, "tex0"), 0);
+                }
+                // set polygon mode and then draw elements.
+                glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
+                glLineWidth(1.0f);
+                glDrawElements(mode, mesh.index_buffer.size() * sizeof(mesh.index_buffer[0]), GL_UNSIGNED_INT, 0);
+
+                // unbind vertex array and texture.
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glBindVertexArray(0);
+            }
+        }
     }
 
-    // per mesh shader updates; colour and combined matrix transformation.
-    glUniform3fv(glGetUniformLocation(shader.ID, "albedo"), 1, glm::value_ptr(colour));                     // base colour of mesh.
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(mvp));           // mesh view projection matrix.
-    
-    // set polygon mode and then draw elements.
-    glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
-    glLineWidth(1.0f);
-    glDrawElements(mode, indices.size() * sizeof(indices[0]), GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
+    for (auto &child : node.children)
+    {
+        draw_node(*child, mode, transform, shader);
+    }
+
 }
 
-// change this tinygltf stuff to just json.hpp stuff cause i cba dealing with this lib anymore Lol.
-// maybe lol. might be a lot of effort?
-Texture::Texture(tinygltf::Image &image)
+// draw model by drawing each mesh contained within the model.
+void Model::draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, glm::vec3 colour)
 {
-    name = image.name;
+    glm::mat4 transform = translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
+
+    // per-model uniforms.
+    glUseProgram(shader.ID);
+    glUniform3fv(glGetUniformLocation(shader.ID, "albedo"), 1, glm::value_ptr(colour));
+    for (auto skin : skins)
+    {
+        glUniformMatrix4fv(glGetUniformLocation(shader.ID, "joint_matrices"), MAX_JOINTS, GL_FALSE, glm::value_ptr(skin.joint_matrix[0]));
+    }
+
+    // loop through all nodes in the model.
+    for (auto &node : nodes)
+    {
+        draw_node(*node, GL_TRIANGLES, transform, shader);
+    }
+}
+
+// texture handling, more tinygltf agnostic now.
+Texture::Texture(std::string &filename, int &width, int &height, int &component, int &bits, unsigned char *image_data)
+{
+    Texture::name = filename;
     std::cout << "texture: " << name << "\n";
 
     // generate texture using ID.
@@ -103,14 +104,14 @@ Texture::Texture(tinygltf::Image &image)
     glBindTexture(GL_TEXTURE_2D, ID);
 
     // texture settings.
-    // glPixelStorei(GL_UNPACK_ALIGNMENT, 4);  // dunno what this does lol.
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);  // dunno what this does lol.
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // GL_LINEAR = bilinear filter.
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR); // GL_LINEAR_MIPMAP_LINEAR = trilinear filter.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    // determine image format from number of components. 
-    switch (image.component)
+    // determine image format from number of components. defaults to rgba.
+    switch (component)
     {
     case 1:
         format = GL_RED;
@@ -126,8 +127,8 @@ Texture::Texture(tinygltf::Image &image)
         break;
     }
 
-    // determine image type from number of bits.
-    switch (image.bits)
+    // determine image type from number of bits. defaults to 8 bit.
+    switch (bits)
     {
     case 16:
         type = GL_UNSIGNED_SHORT;
@@ -141,206 +142,590 @@ Texture::Texture(tinygltf::Image &image)
     }
 
     // generate texture with parameters.
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, format, type, image.image.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, format, type, image_data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // delete texture! need to add the stbi clear thing here somehow?
+    // unbind texture.
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-// for reading .gltf buffers.
-// is a template as buffers store varying types of data but are accessed the same way.
-template <typename T> T get_buffer(tinygltf::Accessor &accessor, tinygltf::Model &model)
+template <typename T> const T *get_buffer(tinygltf::Model &model, tinygltf::Primitive primitive, std::string name, int type, int &stride, size_t &count)
 {
-    const tinygltf::BufferView& buffer_view = model.bufferViews[accessor.bufferView];
-    const tinygltf::Buffer& buffer          = model.buffers[buffer_view.buffer];
-    return reinterpret_cast<T>(&buffer.data[buffer_view.byteOffset + accessor.byteOffset]);
+    const T *buffer = nullptr;
+    if (primitive.attributes.find(name) != primitive.attributes.end())
+    {
+        const tinygltf::Accessor &acc       = model.accessors[primitive.attributes.find(name)->second];
+        const tinygltf::BufferView &view    = model.bufferViews[acc.bufferView];
+        buffer                              = reinterpret_cast<const T *>(&model.buffers[view.buffer].data[view.byteOffset + acc.byteOffset]);
+        stride                              = acc.ByteStride(view) ? (acc.ByteStride(view) / sizeof(T)) : tinygltf::GetNumComponentsInType(type);
+        count                               = acc.count;
+    }
+    return buffer;
 }
 
-// recursive node traversal function to load from .gltf file.
-// atm just loads mesh data but will add animation loading etc.
-// a node can have mesh, armature, bone etc. 
-void Model::load_from_node(tinygltf::Model &model, tinygltf::Node &node)
+void Model::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, Node *parent, uint32_t node_index, std::vector<uint32_t> &index_buffer, std::vector<Vertex> &vertex_buffer)
 {
-    cout << "current node: " << node.name << "\n";
+    Node *node      = new Node{};
+    node->parent    = parent;
+    node->matrix    = glm::mat4(1.0f);
+    node->index     = node_index;
+    node->skin      = input_node.skin;
 
-    // get transforms of current node.
-    glm::vec3 translation   = glm::vec3(0.0f);
-    glm::quat rotation      = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    glm::vec3 scale         = glm::vec3(1.0f);
-
-    // get translation, rotation, scale, (and matrix?) if available here.
-    if (node.translation.size() > 0)
+    // get the node's transform, either as in T*R*S format, or a matrix.
+    if (!input_node.translation.empty())
     {
-        translation = glm::vec3(node.translation[0], node.translation[1], node.translation[2]);
+        node->translation = glm::make_vec3(input_node.translation.data());
     }
-    
-    // gltf files store rotations in (x, y, z, w) order, glm quats are (w, x, y, z).
-    if (node.rotation.size() > 0)
+    if (!input_node.rotation.empty())
     {
-        rotation = glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+        glm::quat q     = glm::make_quat(input_node.rotation.data());
+        node->rotation  = glm::mat4(q);
+    }
+    if (!input_node.scale.empty())
+    {
+        node->scale = glm::make_vec3(input_node.scale.data());
+    }
+    if (!input_node.matrix.empty())
+    {
+        node->matrix = glm::make_mat4x4(input_node.matrix.data());
     }
 
-    // x, y, z scale.
-    if (node.scale.size() > 0)
+    // load children of node.
+    if (input_node.children.size() > 0)
     {
-        scale = glm::vec3(node.scale[0], node.scale[1], node.scale[2]);
-    }
-
-    // MESH LOAD.
-    // if the current node has a mesh (other check is if mesh in question is part of the model but dunno if needed?)
-    // node.mesh is the ("mesh" : 0) part of gltf file.
-    if ((node.mesh >= 0) && ((size_t)node.mesh < model.meshes.size()))
-    {
-        // loop through each primitive in the mesh.
-        // meshes usually just have one primitive though.
-        for (size_t i = 0; i < model.meshes[node.mesh].primitives.size(); ++i)
+        for (size_t i = 0; i < input_node.children.size(); ++i)
         {
-            // primitive shorthand to make stuff easier to read.
-            tinygltf::Primitive &this_mesh = model.meshes[node.mesh].primitives[i];
-
-            // create vectors for loaded data that will be used to create the mesh.
-            std::vector<Vertex> vertices;
-            std::vector<GLuint> indices;
-            std::vector<Texture> textures;
-
-            // accessors for each attribute of the mesh.
-            tinygltf::Accessor position_acc = model.accessors[this_mesh.attributes["POSITION"]];
-            tinygltf::Accessor normal_acc   = model.accessors[this_mesh.attributes["NORMAL"]];
-            tinygltf::Accessor texcoord_acc = model.accessors[this_mesh.attributes["TEXCOORD_0"]];
-            tinygltf::Accessor indices_acc  = model.accessors[this_mesh.indices];
-
-            // add stuff here so that it determines the type needed automatically. ie short etc for indices changes.
-            // could add checks to see if undefined etc but not needed rlly atm.
-            const float* positions_buffer           = get_buffer<const float*>(position_acc, model);
-            const float* normals_buffer             = get_buffer<const float*>(normal_acc, model);
-            const float* texcoords_buffer           = get_buffer<const float*>(texcoord_acc, model);
-            const unsigned short* indices_buffer    = get_buffer<const unsigned short*>(indices_acc, model);
-
-            // get vertex data from buffer and push to vertices vector.
-            for (size_t i = 0; i < position_acc.count; ++i)
-            {
-                Vertex vertex;
-                vertex.position = rotation * (glm::vec3(positions_buffer[i * 3 + 0],
-                                                        positions_buffer[i * 3 + 1],
-                                                        positions_buffer[i * 3 + 2]) * scale) + translation;
-                                        
-                vertex.normal   = rotation * glm::vec3( normals_buffer[i * 3 + 0],
-                                                        normals_buffer[i * 3 + 1],
-                                                        normals_buffer[i * 3 + 2]);
-
-                vertex.color    = vertex.normal;
-                vertex.texUV    = glm::vec2(texcoords_buffer[i * 2 + 0], texcoords_buffer[i * 2 + 1]);
-                vertices.push_back(vertex);
-            }
-
-            // get indices from buffer and push to indices vector.
-            for (size_t i = 0; i < indices_acc.count; ++i)
-            {
-                indices.push_back((GLuint)indices_buffer[i]);
-            }
-
-            // if (model.textures.size() > 0)
-            // check if the current model has any textures associated with it.
-            // don't think this works properly atm.
-            if (this_mesh.material >= 0)
-            {
-                // create a texture pointer equal to the texture associated with the current mesh's material.
-                int texture_ID = model.textures[this_mesh.material].source;
-
-                // if texture source exists, push texture source image as a new texture.
-                if (texture_ID >= 0)
-                {
-                    bool is_duplicate = false;
-                    for (size_t j = 0; j < loaded_textures.size(); j++)
-                    {
-                        if (loaded_textures[j].name == model.images[texture_ID].name)
-                        {
-                            textures.push_back(loaded_textures[j]);
-                            is_duplicate = true;
-                            break;
-                        }
-                    }
-
-                    // texture is not in loaded textures array, so add to both it and the textures array.
-                    if (!is_duplicate)
-                    {
-                        loaded_textures.push_back(Texture(model.images[texture_ID]));
-                        textures.push_back(loaded_textures.back());
-                    }                    
-                }
-            }
-            else
-            {
-                cout << "NO TEXTURE AT current node: " << node.name << "\n";
-                // should eventually push back a null/empty texture here rlly?
-                // figure out how to do that without using like a blank png lmao.
-            }
-
-            // finally, create a new mesh object using the above data and push to model meshes vector.
-            Mesh mesh = Mesh(vertices, indices, textures);
-            
-            // if flag added in blender, it does not collide.
-            if (model.meshes[node.mesh].extras.IsObject())
-            {
-                mesh.collider = false;
-            }
-            else
-            {
-                mesh.collider = true;
-            }
-            
-            meshes.push_back(mesh);
+            load_node(input.nodes[input_node.children[i]], input, node, input_node.children[i], index_buffer, vertex_buffer);
         }
     }
 
-    // load armature(s) here i think...
-    // i think the check here is if it has any children? cause mb only armatures have children field.
-
-
-    // recursively traverse each node in the scene.
-    for (size_t i = 0; i < node.children.size(); i++)
+    // load mesh from node if available.
+    if (input_node.mesh > -1)
     {
-        load_from_node(model, model.nodes[node.children[i]]);
+        const tinygltf::Mesh mesh = input.meshes[input_node.mesh];
+        // loop through each primitive of the mesh, which is usually only 1 per mesh.
+        for (size_t i = 0; i < mesh.primitives.size(); ++i)
+        {
+            const tinygltf::Primitive &gltf_primitive = mesh.primitives[i];
+            uint32_t first_index    = static_cast<uint32_t>(index_buffer.size());
+            uint32_t vertex_start   = static_cast<uint32_t>(vertex_buffer.size());
+            bool has_skin           = false;
+            
+            // where what is loaded is stored.
+            MeshPrimitive mesh_primitive{};
+            std::vector<Vertex> collider_vertices;       // store vertices publicly for collision load?
+            std::vector<GLuint> collider_indices;
+
+            cout << "Mesh: " << mesh.name << "\n";
+
+            // byte strides/lengths for each buffer entry.
+            int position_stride     = 0;
+            int normal_stride       = 0;
+            int texcoord_stride     = 0;
+            int joints_stride       = 0;
+            int weights_stride      = 0;
+            
+            uint32_t index_count    = 0;
+            size_t vertices_count   = 0;
+
+            // these are unnecesary, find a way to get rid.
+            size_t normals_count    = 0;
+            size_t texcoords_count  = 0;
+            size_t joints_count     = 0;
+            size_t weights_count    = 0;
+
+            // retrieve all buffers.
+            const auto positions_buffer     = get_buffer<float>(    input, gltf_primitive, "POSITION",      TINYGLTF_TYPE_VEC3, position_stride,    vertices_count);
+            const auto normals_buffer       = get_buffer<float>(    input, gltf_primitive, "NORMAL",        TINYGLTF_TYPE_VEC3, normal_stride,      normals_count);
+            const auto texcoords_buffer     = get_buffer<float>(    input, gltf_primitive, "TEXCOORD_0",    TINYGLTF_TYPE_VEC2, texcoord_stride,    texcoords_count);
+            const auto joint_indices_buffer = get_buffer<uint16_t>( input, gltf_primitive, "JOINTS_0",      TINYGLTF_TYPE_VEC4, joints_stride,      joints_count);
+            const auto joint_weights_buffer = get_buffer<float>(    input, gltf_primitive, "WEIGHTS_0",     TINYGLTF_TYPE_VEC4, weights_stride,     weights_count);
+
+            // if the node has joint indides & weights, then it is skinned.
+            has_skin = (joint_indices_buffer && joint_weights_buffer);
+
+            for (size_t j = 0; j < vertices_count; ++j)
+            {
+                Vertex vertex{};
+                vertex.position         = glm::vec4(glm::make_vec3(&positions_buffer[j * position_stride]), 1.0f);
+                vertex.normal           = glm::normalize(glm::vec3(normals_buffer ? glm::make_vec3(&normals_buffer[j * normal_stride]) : glm::vec3(0.0f)));
+                vertex.texUV            = texcoords_buffer ? glm::make_vec2(&texcoords_buffer[j * texcoord_stride]) : glm::vec2(0.0f);
+                vertex.color            = vertex.normal;
+                vertex.joint_indices    = has_skin ? glm::vec4(glm::make_vec4(&joint_indices_buffer[j * joints_stride])) : glm::vec4(1.0f);
+                vertex.joint_weights    = has_skin ? glm::vec4(glm::make_vec4(&joint_weights_buffer[j * weights_stride])) : glm::vec4(1.0f);
+
+                // clean this up.
+                vertex_buffer.push_back(vertex);
+                mesh_primitive.vertex_buffer.push_back(vertex);
+                
+                vertex.position = glm::vec3(get_node_matrix(node) * glm::vec4(glm::make_vec3(&positions_buffer[j * position_stride]), 1.0f));
+                collider_vertices.push_back(vertex);
+                mesh_primitive.vertex_collider_buffer.push_back(vertex);
+            }
+
+            // indices.
+            const tinygltf::Accessor &acc           = input.accessors[gltf_primitive.indices];
+            const tinygltf::BufferView &view        = input.bufferViews[acc.bufferView];
+            const tinygltf::Buffer &indices_buffer  = input.buffers[view.buffer];
+            index_count += static_cast<uint32_t>(acc.count);
+
+            switch (acc.componentType)
+            {
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT:
+                {
+                        const uint32_t *buffer = reinterpret_cast<const uint32_t*>(&indices_buffer.data[acc.byteOffset + view.byteOffset]);
+						for (size_t j = 0; j < acc.count; ++j)
+						{
+							index_buffer.push_back(buffer[j] + vertex_start);
+                            
+                            mesh_primitive.index_buffer.push_back(buffer[j]);
+                            collider_indices.push_back(buffer[j]);
+						}
+                    break;
+                }
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT: // 5123, mostly going here i think.
+                {
+                    const uint16_t *buffer = reinterpret_cast<const uint16_t*>(&indices_buffer.data[acc.byteOffset + view.byteOffset]);
+                    for (size_t j = 0; j < acc.count; ++j)
+                    {
+                        index_buffer.push_back(buffer[j] + vertex_start);
+
+                        mesh_primitive.index_buffer.push_back(buffer[j]);
+                        collider_indices.push_back(buffer[j]);
+                    }
+                    break;
+                }
+                case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE:
+                {
+                    const uint8_t *buffer = reinterpret_cast<const uint8_t*>(&indices_buffer.data[acc.byteOffset + view.byteOffset]);
+                    for (size_t j = 0; j < acc.count; ++j)
+                    {
+                        index_buffer.push_back(buffer[j] + vertex_start);
+
+                        mesh_primitive.index_buffer.push_back(buffer[j]);
+                        collider_indices.push_back(buffer[j]);
+                    }
+                    break;
+                }
+                default:
+                    cout << "type of indices not supported." << "\n";
+                    break;
+            }
+
+            // finally push the loaded primitive into the mesh's primitive vector.
+            mesh_primitive.first_index      = first_index;
+            mesh_primitive.index_count      = index_count;
+            mesh_primitive.material_index   = gltf_primitive.material; // this is the id of the texture.
+            node->mesh_primitives.push_back(mesh_primitive);
+
+            // testing.
+            meshes.push_back(Mesh(collider_vertices, collider_indices, 0));
+        }
+    }
+
+    if (parent)
+    {
+        parent->children.push_back(node);
+    }
+    else
+    {
+        nodes.push_back(node);
+    }
+}
+
+// link vertex attributes such as position, normals, and texcoords to VBO.
+void link_attrib(GLuint VBO, GLuint layout, GLuint size, GLenum type, GLsizeiptr stride, void *offset)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glEnableVertexAttribArray(layout);
+
+    switch (type)
+    {
+    case GL_FLOAT:
+        glVertexAttribPointer(layout, size, type, GL_FALSE, stride, offset);
+        break;
+    case GL_INT:
+        glVertexAttribIPointer(layout, size, type, stride, offset);
+        break;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void Model::bind_node(Node *node)
+{
+    if (node->mesh_primitives.size() > 0)
+    {
+        for (MeshPrimitive &mesh : node->mesh_primitives)
+        {
+            glGenVertexArrays(1, &mesh.VAO); // generate VAO.
+            glBindVertexArray(mesh.VAO);     // bind VAO.
+
+            // generate VBO, bind, then pass vertices vector.
+            glGenBuffers(1, &mesh.VBO);
+            glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+            glBufferData(GL_ARRAY_BUFFER, mesh.vertex_buffer.size() * sizeof(Vertex), mesh.vertex_buffer.data(), GL_STATIC_DRAW);
+
+            // generate EBO, bind, then pass indices vector.
+            glGenBuffers(1, &mesh.EBO);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.EBO);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.index_buffer.size() * sizeof(GLuint), mesh.index_buffer.data(), GL_STATIC_DRAW);
+
+            // link vertex attributes to shader layouts.
+            link_attrib(mesh.VBO, 0, 3, GL_FLOAT, sizeof(Vertex), nullptr);                         // position (vec3).
+            link_attrib(mesh.VBO, 1, 3, GL_FLOAT, sizeof(Vertex), (void *)(3   * sizeof(float)));   // normal   (vec3).
+            link_attrib(mesh.VBO, 2, 3, GL_FLOAT, sizeof(Vertex), (void *)(6   * sizeof(float)));   // colour   (vec3).
+            link_attrib(mesh.VBO, 3, 2, GL_FLOAT, sizeof(Vertex), (void *)(9   * sizeof(float)));   // texture  (vec2).
+            link_attrib(mesh.VBO, 4, 4, GL_FLOAT, sizeof(Vertex), (void *)(11  * sizeof(float)));   // joints   (vec4).
+            link_attrib(mesh.VBO, 5, 4, GL_FLOAT, sizeof(Vertex), (void *)(15  * sizeof(float)));   // weights  (vec4).
+
+            glBindVertexArray(0);                       // unbind VAO.
+            glBindBuffer(GL_ARRAY_BUFFER, 0);           // unbind VBO.
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);   // unbind EBO.
+        }
+    }
+
+    for (auto &child : node->children)
+    {
+        bind_node(&*child);
+    }
+}
+
+void Model::load_material(tinygltf::Model &input)
+{
+    for (size_t i = 0; i < input.textures.size(); ++i)
+	{
+        tinygltf::Image img = input.images[input.textures[i].source];
+        textures.push_back(Texture(img.name, img.width, img.height, img.component, img.bits, img.image.data()));
+    }
+}
+
+// recrusive function to locate specific gltf node.
+Node *Model::find_node(Node *parent, uint32_t index)
+{
+    Node *node_found = nullptr;
+    if (parent->index == index)
+    {
+        return parent;
+    }
+    for (auto &child : parent->children)
+    {
+        node_found = find_node(child, index);
+        if (node_found)
+        {
+            break;
+        }
+    }
+    return node_found;
+}
+
+Node *Model::node_from_index(uint32_t index)
+{
+    Node *node_found = nullptr;
+    for (auto &node : nodes)
+    {
+        node_found = find_node(node, index);
+        if (node_found)
+        {
+            break;
+        }
+    }
+    return node_found;
+}
+
+// basically just gets the inverse bind matrix of each node that is a joint.
+void Model::load_skins(tinygltf::Model &input)
+{
+    // resize model's skin vector according to gltf being loaded.
+    skins.resize(input.skins.size());
+
+    // loop through each skin in the gltf model.
+    for (size_t i = 0; i < input.skins.size(); ++i)
+    {
+        tinygltf::Skin gltf_skin    = input.skins[i];
+        skins[i].name               = gltf_skin.name;
+        skins[i].skeleton_root      = node_from_index(gltf_skin.skeleton);
+
+        cout << "skin: " << skins[i].name << " (" << gltf_skin.joints.size() << " joints)" <<  "\n";
+
+        // find nodes that are joints.
+        for (int joint_index : gltf_skin.joints)
+        { 
+            Node *node = node_from_index(joint_index);
+            if (node)
+            {
+                skins[i].joints.push_back(node);
+            }
+        }
+
+        // get inverse bind matrices from buffer.
+        if (gltf_skin.inverseBindMatrices > -1)
+        {
+            const tinygltf::Accessor &acc       = input.accessors[gltf_skin.inverseBindMatrices];
+            const tinygltf::BufferView &view    = input.bufferViews[acc.bufferView];
+            const tinygltf::Buffer &buffer      = input.buffers[view.buffer];
+
+            // copy buffer to skin's matrix vector with memcpy.
+            skins[i].inverse_bind_matrices.resize(acc.count);
+            memcpy(skins[i].inverse_bind_matrices.data(), &buffer.data[acc.byteOffset + view.byteOffset], acc.count * sizeof(glm::mat4));
+        }
+    }
+
+    // handles loading models without skins.
+    if (input.skins.empty())
+    {
+        Skin skin;
+        skins.push_back(skin);
+        for (size_t i = 0; i < MAX_JOINTS; ++i)
+        {
+            skins[0].joint_matrix[i] = glm::mat4(1.0f);
+        }
+    }
+}
+
+void Model::load_animations(tinygltf::Model &input)
+{
+    animations.resize(input.animations.size());
+
+    for (size_t i = 0; i < input.animations.size(); ++i)
+    {
+        tinygltf::Animation gltf_animation  = input.animations[i];
+        animations[i].name                  = gltf_animation.name;
+
+        cout << "animation: " << animations[i].name <<  "\n";
+
+        animations[i].samplers.resize(gltf_animation.samplers.size());
+        for (size_t j = 0; j < gltf_animation.samplers.size(); ++j)
+        {
+            tinygltf::AnimationSampler gltf_sampler = gltf_animation.samplers[j];
+            AnimationSampler &dst_sampler           = animations[i].samplers[j];
+            dst_sampler.interpolation               = gltf_sampler.interpolation;
+
+            // read sampler keyframe input time values.
+            const tinygltf::Accessor &input_acc     = input.accessors[gltf_sampler.input];
+            const tinygltf::BufferView &input_view  = input.bufferViews[input_acc.bufferView];
+            const tinygltf::Buffer &input_buffer    = input.buffers[input_view.buffer];
+            const void *input_data_ptr              = &input_buffer.data[input_acc.byteOffset + input_view.byteOffset];
+            const float *input_buf                  = static_cast<const float *>(input_data_ptr);
+
+            for (size_t index = 0; index < input_acc.count; ++index)
+            {
+                dst_sampler.inputs.push_back(input_buf[index]);
+            }
+
+            // adjust start & end times.
+            for (auto input : animations[i].samplers[j].inputs)
+            {
+                if (input < animations[i].start)
+                {
+                    animations[i].start = input;
+                }
+                if (input > animations[i].end)
+                {
+                    animations[i].end = input;
+                }
+            }
+
+            // get translate/rotate/scale from keyframe.
+            const tinygltf::Accessor &output_acc    = input.accessors[gltf_sampler.output];
+            const tinygltf::BufferView &output_view = input.bufferViews[output_acc.bufferView];
+            const tinygltf::Buffer &output_buffer   = input.buffers[output_view.buffer];
+            const void *output_data_ptr             = &output_buffer.data[output_acc.byteOffset + output_view.byteOffset];
+
+            assert(output_acc.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+            switch (output_acc.type)
+            {
+                case TINYGLTF_TYPE_VEC3: 
+                {
+                    const glm::vec3 *buffer = static_cast<const glm::vec3 *>(output_data_ptr);
+                    for (size_t index = 0; index < output_acc.count; ++index)
+                    {
+                        dst_sampler.outputs_vec4.push_back(glm::vec4(buffer[index], 0.0f));
+                    }
+                    break;
+                }
+                case TINYGLTF_TYPE_VEC4: 
+                {
+                    const glm::vec4 *buffer = static_cast<const glm::vec4 *>(output_data_ptr);
+                    for (size_t index = 0; index < output_acc.count; ++index)
+                    {
+                        dst_sampler.outputs_vec4.push_back(buffer[index]);
+                    }
+                    break;
+                }
+                default: 
+                {
+                    cout << "unknown type in animation: " << output_acc.type << "\n";
+                    break;
+                }
+            }
+        }
+
+        // channels.
+        animations[i].channels.resize(gltf_animation.channels.size());
+        for (size_t j = 0; j < gltf_animation.channels.size(); ++j)
+        {
+            tinygltf::AnimationChannel gltf_channel = gltf_animation.channels[j];
+            AnimationChannel &dst_channel           = animations[i].channels[j];
+            dst_channel.path                        = gltf_channel.target_path;
+            dst_channel.sampler_index               = gltf_channel.sampler;
+            dst_channel.node                        = node_from_index(gltf_channel.target_node);
+        }
+    }
+}
+
+void Model::update_animations(float delta_time)
+{
+    if (animations.empty())
+    {
+        return;
+    }
+
+    if (active_animation > static_cast<uint32_t>(animations.size()) - 1)
+    {
+        cout << "no animation with index: " << active_animation << "\n";
+        return;
+    }
+
+    Animation &animation = animations[active_animation];
+
+    // increment animation by time variable.
+    animation.current_time  += delta_time;
+    if (animation.current_time > animation.end)
+    {
+        animation.current_time -= animation.end;
+    }
+
+    for (auto &channel : animation.channels)
+    {
+        AnimationSampler &sampler = animation.samplers[channel.sampler_index];
+        for (size_t i = 0; i < sampler.inputs.size() - 1; ++i)
+        {
+            if (sampler.interpolation != "LINEAR")
+            {
+                cout << "only linear interpolations supported atm." << "\n";
+                continue;
+            }
+
+            // get input keyframes for the current time value.
+            if ((animation.current_time >= sampler.inputs[i]) && (animation.current_time <= sampler.inputs[i + 1]))
+            {
+                float a = (animation.current_time - sampler.inputs[i]) / (sampler.inputs[i + 1] - sampler.inputs[i]);
+                if (channel.path == "translation")
+                {
+                    channel.node->translation = glm::mix(sampler.outputs_vec4[i], sampler.outputs_vec4[i + 1], a);
+                }
+            
+                if (channel.path == "rotation")
+                {
+                    glm::quat quat_a;
+                    quat_a.x = sampler.outputs_vec4[i].x;
+                    quat_a.y = sampler.outputs_vec4[i].y;
+                    quat_a.z = sampler.outputs_vec4[i].z;
+                    quat_a.w = sampler.outputs_vec4[i].w;
+
+                    glm::quat quat_b;
+                    quat_b.x = sampler.outputs_vec4[i + 1].x;
+                    quat_b.y = sampler.outputs_vec4[i + 1].y;
+                    quat_b.z = sampler.outputs_vec4[i + 1].z;
+                    quat_b.w = sampler.outputs_vec4[i + 1].w;
+
+                    channel.node->rotation = glm::normalize(glm::slerp(quat_a, quat_b, a));
+                }
+                if (channel.path == "scale")
+                {
+                    channel.node->scale = glm::mix(sampler.outputs_vec4[i], sampler.outputs_vec4[i + 1], a);
+                }
+            }
+        }
+    }
+
+    // finally, update the joints with the animation.
+    for (auto &node : nodes)
+    {
+        update_joints(node);
+    }
+}
+
+void Model::update_joints(Node *node)
+{
+    // if current node has a skin associated with it...
+    if (node->skin > -1)
+    {
+        // get the inverse of the node containing the skin, as it needs to be ignored.
+        glm::mat4 inverse_transform = glm::inverse(get_node_matrix(node));
+
+        for (size_t i = 0; i < skins[node->skin].joints.size(); ++i)
+        {
+            skins[node->skin].joint_matrix[i] = inverse_transform * get_node_matrix(skins[node->skin].joints[i]) * skins[node->skin].inverse_bind_matrices[i];
+        }
+    }
+    for (auto &child : node->children)
+    {
+        update_joints(child);
     }
 }
 
 // load a model from a .gltf file.
 Model::Model(std::string filename)
 {
-    tinygltf::Model model;      // stores .gltf model reference.
-    tinygltf::TinyGLTF loader;  // stores ASCII from file.
-    std::string err;            // outputs warning if fails to load properly.
-    std::string warn;           // outputs error if any errors.
+    tinygltf::Model glTF_input;         // stores .gltf model reference.
+    tinygltf::TinyGLTF glTF_context;    // stores ASCII from file.
+    std::string error;                  // outputs warning if fails to load properly.
+    std::string warning;                // outputs error if any errors.
 
-    bool loaded = loader.LoadASCIIFromFile(&model, &err, &warn, MODELS_PATH + filename);
-    if (!warn.empty())  { cout << "WARN: " << warn << "\n"; }
-    if (!err.empty())   { cout << "ERR: " << err << "\n"; }
+    bool loaded = glTF_context.LoadASCIIFromFile(&glTF_input, &error, &warning, MODELS_PATH + filename);
+    if (!error.empty())   { cout << "ERR: " << error << "\n"; }
+    if (!warning.empty())  { cout << "WARN: " << warning << "\n"; }
+
+    std::vector<uint32_t> index_buffer;
+    std::vector<Vertex> vertex_buffer;
 
     // if loaded correctly, load file contents.
     if (loaded)
     {
         cout << "model: " << filename << "\n";
 
-        // recursively traverse each node in the scene.
-        const tinygltf::Scene &scene = model.scenes[model.defaultScene];
+        // load images, materials, textures.
+        load_material(glTF_input);
+
+        //glTF_input.defaultScene
+        const tinygltf::Scene &scene = glTF_input.scenes[0];
         for (size_t i = 0; i < scene.nodes.size(); ++i)
         {
-            load_from_node(model, model.nodes[scene.nodes[i]]);
+            const tinygltf::Node node = glTF_input.nodes[scene.nodes[i]];
+            load_node(node, glTF_input, nullptr, scene.nodes[i], index_buffer, vertex_buffer);
         }
 
-        cout << "\n";
+        // load skins and animations.
+        load_skins(glTF_input);
+        load_animations(glTF_input);
+
+        // calculate initial pose.
+        for (auto node : nodes)
+		{
+			update_joints(node);
+		}
+
+        // after loading everything, bind the mesh nodes.
+        for (auto &node : nodes)
+        {
+            bind_node(&*node);
+        }
     }
+    cout << "\n";
 }
 
-// draw model by drawing each mesh contained within the model.
-void Model::draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, glm::vec3 colour)
-{
-    for (size_t i = 0; i < meshes.size(); i++)
-	{
-        meshes[i].draw(GL_TRIANGLES, position, rotation, scale, shader, colour);
-	}
-}
+
+
+
+
+
+
+
+// probably clean this stuff below up at some point,
+// maybe keep the gltf loading/drawing to it's own file?
 
 // grid
 Grid::Grid(int slices)
@@ -392,7 +777,7 @@ Grid::Grid(int slices)
     }
 
     // update grid mesh with new vertices and indices.
-    mesh = Mesh(vertices, indices, textures);
+    mesh = Mesh(vertices, indices, 0);
 }
 
 // draws grid at centre of world.
@@ -405,7 +790,7 @@ void Grid::draw(Shader shader)
     glm::vec3 scale     = glm::vec3((float)(slices * sca));
 
     // draw mesh with GL_LINES.
-    mesh.draw(GL_LINES, position, rotation, scale, shader, glm::vec3(0.0f));
+    // mesh.draw(GL_LINES, position, rotation, scale, shader, glm::vec3(0.0f));
 }
 
 // grid
@@ -482,7 +867,7 @@ Frustum::Frustum(std::vector<glm::vec4> corners)
 
 
     // update grid mesh with new vertices and indices.
-    mesh = Mesh(vertices, indices, textures);
+    mesh = Mesh(vertices, indices, 0);
 }
 
 // draws grid at centre of world.
@@ -492,14 +877,14 @@ void Frustum::draw(glm::vec3 position, Shader shader)
     glm::vec3 scale     = glm::vec3(1.0f);
 
     // draw mesh with GL_LINES.
-    mesh.draw(GL_LINES, position, rotation, scale, shader, glm::vec3(2.0f));
+    // mesh.draw(GL_LINES, position, rotation, scale, shader, glm::vec3(2.0f));
 }
 
 // very simple circle for collision shapes. 
 Circle::Circle(float radius)
 {
     // make vertices along a circle. increment = resolution?
-    for (float i = 0; i < 360; i++)
+    for (float i = 0; i < 360; ++i)
     {
         Vertex vertex;
         vertex.position = glm::vec3(sinf(glm::radians(i)) * radius, 0.0f, cosf(glm::radians(i)) * radius);
@@ -510,9 +895,6 @@ Circle::Circle(float radius)
         vertices.push_back(vertex);
         indices.push_back(i);
     }
-
-    // update grid mesh with new vertices and indices.
-    mesh = Mesh(vertices, indices, textures);
 }
 
 // draw circle.
@@ -520,9 +902,23 @@ void Circle::draw(glm::vec3 position, Shader shader, glm::vec3 colour)
 {
     glm::quat rotation  = glm::quat(glm::vec3(0.0f));
     glm::vec3 scale     = glm::vec3(1.0f);
+    glm::mat4 mvp       = translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
 
     // draw mesh with GL_LINES.
-    mesh.draw(GL_LINE_LOOP, position, rotation, scale, shader, colour);
+    glUseProgram(shader.ID);    // activate the shader being used to draw this model. (potential for multiple shaders per model?)
+    glBindVertexArray(VAO);     // bind the VBO with the vertexes from the mesh.
+    
+    // per mesh shader updates; colour and combined matrix transformation.
+    glUniform3fv(glGetUniformLocation(shader.ID, "albedo"), 1, glm::value_ptr(colour));                     // base colour of mesh.
+    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(mvp));           // mesh view projection matrix.
+
+    // set polygon mode and then draw elements.
+    glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
+    glLineWidth(1.0f);
+    glDrawElements(GL_LINE_LOOP, indices.size() * sizeof(indices[0]), GL_UNSIGNED_INT, 0);
+
+    // unbind vertex array and texture.
+    glBindVertexArray(0);
 }
 
 // used for post-process rendering.
@@ -550,8 +946,8 @@ ScreenTexture::ScreenTexture()
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
 
     // link attribs.
-    link_attrib(0, 2, GL_FLOAT, 4 * sizeof(float), (void*)(0), VBO);
-    link_attrib(1, 2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)), VBO);
+    link_attrib(VBO, 0, 2, GL_FLOAT, 4 * sizeof(float), (void*)(0));
+    link_attrib(VBO, 1, 2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     
     // color texture attachment.
     glGenTextures(1, &ID);
@@ -602,6 +998,9 @@ void ScreenTexture::draw(Shader &shader)
     glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glEnable(GL_DEPTH_TEST);
+
+    // unbind vertex array and texture.
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindVertexArray(0);
 }
 
@@ -637,8 +1036,8 @@ Image2D::Image2D(std::string filename)
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
 
     // link attribs.
-    link_attrib(0, 2, GL_FLOAT, 4 * sizeof(float), (void*)(0), VBO);
-    link_attrib(1, 2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)), VBO);
+    link_attrib(VBO, 0, 2, GL_FLOAT, 4 * sizeof(float), (void*)(0));
+    link_attrib(VBO, 1, 2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
     // generate texture with parameters.
     glGenTextures(1, &ID);
@@ -648,7 +1047,7 @@ Image2D::Image2D(std::string filename)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // delete texture!
+    // unbind texture.
     glBindTexture(GL_TEXTURE_2D, 0);
     stbi_image_free(data);
 }
@@ -678,5 +1077,41 @@ void Image2D::draw(float x, float y, float scale)
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glDisable(GL_BLEND);    // turn off blending.
-	glBindVertexArray(0);   // unbind VAO.
+
+    // unbind VAO and texture.
+    glBindTexture(GL_TEXTURE_2D, 0);
+	glBindVertexArray(0);
+}
+
+Mesh::Mesh(std::vector<Vertex> &vertices, std::vector<GLuint> &indices, int type)
+{
+    // set local mesh vectors to input for use in draw function.
+    Mesh::vertices  = vertices;
+	Mesh::indices   = indices;
+    Mesh::type      = type;
+
+    glGenVertexArrays(1, &VAO); // generate VAO.
+    glBindVertexArray(VAO);     // bind VAO.
+
+    // generate VBO, bind, then pass vertices vector.
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+
+    // generate EBO, bind, then pass indices vector.
+    glGenBuffers(1, &EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
+
+    // link vertex attributes to shader layouts. first arg = layout number in the shader.
+    link_attrib(VBO, 0, 3, GL_FLOAT, sizeof(Vertex), (void*)(0));   // position (vec3).
+    link_attrib(VBO, 1, 3, GL_FLOAT, sizeof(Vertex), (void*)(3   * sizeof(float)));   // normal (vec3).
+    link_attrib(VBO, 2, 3, GL_FLOAT, sizeof(Vertex), (void*)(6   * sizeof(float)));   // colour (vec3).
+    link_attrib(VBO, 3, 2, GL_FLOAT, sizeof(Vertex), (void*)(9   * sizeof(float)));   // texture (vec2).
+    link_attrib(VBO, 4, 4, GL_FLOAT, sizeof(Vertex), (void*)(11  * sizeof(float)));   // joints (vec4).
+    link_attrib(VBO, 5, 4, GL_FLOAT, sizeof(Vertex), (void*)(15  * sizeof(float)));   // weights (vec4).
+
+    glBindVertexArray(0);                       // unbind VAO.
+    glBindBuffer(GL_ARRAY_BUFFER, 0);           // unbind VBO.
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);   // unbind EBO.
 }

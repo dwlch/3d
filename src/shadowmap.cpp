@@ -13,7 +13,7 @@ ShadowMap::ShadowMap(int size)
     glGenFramebuffers(1, &FBO);
     glGenTextures(3, depth_maps.data());
 
-    for (unsigned int i = 0; i < depth_maps.size(); i++)
+    for (unsigned int i = 0; i < depth_maps.size(); ++i)
     {
         glBindTexture(GL_TEXTURE_2D, depth_maps[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, size, size, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);

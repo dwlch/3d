@@ -22,7 +22,7 @@ struct Player
     };
 
     State state = State::AIR;
-    Model model = Model("player.gltf");
+    Model model = Model("CesiumMan.gltf");
     std::array<CylinderCollider, COLLIDER_COUNT> collider;
 
     const float HEIGHT          = 4.6f;
@@ -49,7 +49,7 @@ struct Player
     float vertical_movement     = 0.0f;     // forward direction speed.
 
     Player();
-    void update(std::vector<std::unique_ptr<Collider>> &colliders, Camera &camera);
+    void update(float delta_time, std::vector<std::unique_ptr<Collider>> &colliders, Camera &camera);
     void respawn();
     void draw(Shader &mesh_shader, Shader &line_shader);
 };

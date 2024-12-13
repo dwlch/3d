@@ -1,38 +1,44 @@
 #version 330 core
 
-// input vertex attributes
-layout (location = 0) in vec3 vertexPosition;     // position of vertex.
-layout (location = 1) in vec3 vertexNormal;       // normal of the vertex.
-layout (location = 2) in vec3 vertexColor;        // colour stored in the vertex.
-layout (location = 3) in vec2 vertexTexCoord;     // vertex texture coordinates.
+layout (location = 0) in vec3 vertex_position;  // position of vertex.
+layout (location = 1) in vec3 vertex_normal;    // normal of the vertex.
+layout (location = 2) in vec3 vertex_color;     // colour stored in the vertex.
+layout (location = 3) in vec2 vertex_texcoord;  // vertex texture coordinates.
+layout (location = 4) in vec4 joints;           // joint IDs.
+layout (location = 5) in vec4 weights;          // joint weights.
 
 #define NUM_CASCADES 3
+#define MAX_JOINTS 100
 
-// input uniform values
-uniform mat4 mvp;                   // matrix that stores the position, rotation, and scale of a mesh.
-uniform mat4 camera;                // matrix that stores the camera position etc.
-uniform mat4 light[NUM_CASCADES];   // light matrix from shadow, one for each cascade.
+uniform mat4 mvp;                               // projection matrix that stores the position, rotation, and scale of a mesh. 
+uniform mat4 camera;                            // view matrix that stores the camera position etc.
+uniform mat4 light[NUM_CASCADES];               // light matrix from shadow, one for each cascade.
+uniform mat4 joint_matrices[MAX_JOINTS];        // array of joint transformations.
 
-out vec3 fragPosition;  // outputs the current position for the Fragment Shader
-out vec3 fragNormal;    // outputs normal
-out vec3 fragColor;     // outputs color
-out vec2 fragTexCoord;  // outputs texture coordinates
-out vec4 fragPosLight[NUM_CASCADES];  // outputs position respective to light.
-out float ClipSpacePosZ;
+// out vec3 frag_position;                         // outputs the current position for the Fragment Shader
+out vec3 frag_normal;                           // outputs normal
+out vec3 frag_color;                            // outputs color
+out vec2 frag_texcoord;                         // outputs texture coordinates
+out vec4 frag_shadowcoords[NUM_CASCADES];       // outputs position respective to light.
 
 void main()
 {
-    // position with respect to model matrix.
-    fragPosition    = vec3(mvp * vec4(vertexPosition, 1.0));
-    fragNormal      = normalize(vec3(inverse(transpose(mvp)) * vec4(vertexNormal, 1.0)));
-    fragColor       = vertexColor;
-    fragTexCoord    = vertexTexCoord;
+    mat4 skin = 
+        weights.x * joint_matrices[int(joints.x)] +
+        weights.y * joint_matrices[int(joints.y)] +
+        weights.z * joint_matrices[int(joints.z)] +
+        weights.w * joint_matrices[int(joints.w)];
 
-    for (int i = 0 ; i < NUM_CASCADES ; i++)
+    vec4 local_position = mvp * vec4(vertex_position, 1.0);
+    gl_Position         = camera * local_position;
+    frag_normal         = normalize(vec3(inverse(transpose(mvp)) * vec4(vertex_normal, 1.0)));
+    frag_color          = vertex_color;
+    frag_texcoord       = vertex_texcoord;
+
+
+    // shadowmap.
+    for (int i = 0 ; i < NUM_CASCADES ; ++i)
     {
-        fragPosLight[i] = light[i] * vec4(fragPosition, 1.0);
+        frag_shadowcoords[i] = light[i] * local_position;
     }
-
-	gl_Position     = camera * vec4(fragPosition, 1.0); // position from camera.
-    // ClipSpacePosZ   = gl_Position.z;
 }

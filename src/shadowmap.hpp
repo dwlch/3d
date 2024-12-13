@@ -20,5 +20,4 @@ struct ShadowMap
     ShadowMap(int size);
     void get_light_projection(Camera &camera, glm::vec3 &light_direction);
     void update_uniforms(Shader &shader, Camera &camera, glm::vec3 &light_pos);
-    
 };
