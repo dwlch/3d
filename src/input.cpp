@@ -12,13 +12,19 @@ float AXIS_1_DOWN   = 0.0f;
 float AXIS_1_LEFT   = 0.0f;
 float AXIS_1_RIGHT  = 0.0f;
 
-int INPUT_0       = 0.0f;
-int INPUT_1       = 0.0f;
+int INPUT_0       = 0;
+int INPUT_1       = 0;
+int INPUT_2       = 0;
+int INPUT_3       = 0;
 
-int INPUT_2       = 0.0f;
-int INPUT_3       = 0.0f;
+int SPACE_PRESSED = 0;
 
-int SPACE_PRESSED = 0.0f;
+int INPUT_0_PREV = 0;
+int INPUT_1_PREV = 0;
+int INPUT_2_PREV = 0;
+int INPUT_3_PREV = 0;
+
+int SPACE_PRESSED_PREV = 0;
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
@@ -34,22 +40,38 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
                 // key/button inputs.
                 case GLFW_KEY_Q:
-                    INPUT_0 = 1;
+                    // if (INPUT_0_PREV != 1)
+                    // {
+                        INPUT_0 = 1;
+                    // }
                     break;
                 case GLFW_KEY_E:
-                    INPUT_1 = 1;
+                    // if (INPUT_1_PREV != 1)
+                    // {
+                        INPUT_1 = 1;
+                    // }
                     break;
 
                 // key/button inputs.
                 case GLFW_KEY_F:
-                    INPUT_2 = 1;
+                    if (INPUT_2_PREV != 1)
+                    {
+                        INPUT_2 = 1;
+                    }
                     break;
                 case GLFW_KEY_R:
-                    INPUT_3 = 1;
+                    if (INPUT_3_PREV != 1)
+                    {
+                        INPUT_3 = 1;
+                    }
                     break;
 
                 // key/button inputs.
                 case GLFW_KEY_SPACE:
+                    // if (SPACE_PRESSED_PREV != 1)
+                    // {
+                    //     SPACE_PRESSED = 1;
+                    // }
                     SPACE_PRESSED = 1;
                     break;
 
@@ -141,6 +163,12 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         case GLFW_REPEAT:
             switch (key)
             {
+                case GLFW_KEY_Q:
+                    INPUT_0 = 1;
+                    break;
+                case GLFW_KEY_E:
+                    INPUT_1 = 1;
+                    break;
                 // key/button inputs.
                 case GLFW_KEY_SPACE:
                     SPACE_PRESSED = 0;
@@ -160,4 +188,19 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         default:
             break;
     }
+}
+
+void update_inputs()
+{
+    INPUT_0_PREV        = INPUT_0;
+    INPUT_1_PREV        = INPUT_1;
+    INPUT_2_PREV        = INPUT_2;
+    INPUT_3_PREV        = INPUT_3;
+    SPACE_PRESSED_PREV  = SPACE_PRESSED;
+
+    // INPUT_0             = 0;
+    // INPUT_1             = 0;
+    INPUT_2             = 0;
+    INPUT_3             = 0;
+    SPACE_PRESSED       = 0;
 }

@@ -7,6 +7,13 @@
 #include "glm/gtx/rotate_vector.hpp"        // glm::rotate().
 #include "glm/gtx/vector_angle.hpp"         // glm::orientedAngle().
 
+#include "defines.hpp"
+
+struct CameraRail
+{
+
+};
+
 struct Camera
 {
     glm::mat4 projection        = glm::mat4(1.0f);
@@ -15,6 +22,8 @@ struct Camera
     glm::vec3 target_pos        = glm::vec3(0.0f);              // store postion of target for shader effects (fog).
     glm::vec3 up                = glm::vec3(0.0f, 1.0f, 0.0f);  // camera up axis.
     glm::vec3 orientation       = glm::vec3(0.0f, 0.0f, 1.0f);  // stores the camera's relative position without distance.
+    glm::vec3 light_pos         = glm::vec3(0.5f, 1.0f, 0.5f);
+    glm::vec3 light_target      = glm::vec3(0.0f);
 
     // constants.
     const float NEAR_PLANE      = 1.0f;         // how close can render to camera.
@@ -24,35 +33,30 @@ struct Camera
     const float FOV_BASE        = 75.0f;        // initial field of view value.
     const float FOV_MIN         = 35.0f;        // minimum FOV value.
     const float FOV_MAX         = 100.0f;       // maximum FOV value.
-    const float DISTANCE_MIN    = 10.0f;        // minimum distance offset value.
+    const float DISTANCE_MIN    = 1.0f;        // minimum distance offset value.
     const float DISTANCE_MAX    = 100.0f;       // maximum distance offset value.
     const float FOV_SCALE       = 0.0f;         // dynamic FOV multiplier. larger = greater change.
     const float DISTANCE_SCALE  = 0.3f;         // dynamic distance multiplier. larger = greater change.
-    const float ACCEL           = 0.1f;         // camera movement speed multiplier.
-    const float SENSITIVITY     = 0.01f;        // camera movement speed multiplier.
+    const float ACCEL           = 10.0f;         // camera movement speed multiplier.
+    const float SENSITIVITY     = 1.75f;        // camera movement speed multiplier.
 
     // variables.
     float FOV                   = FOV_BASE;     // initial field of view value.
     float aspect                = 0.0f;         // aspect ratio.
     float yaw                   = 0.0f;         // horizontal rotation angle in radians.
     float pitch                 = 0.0f;         // vertical rotation angle in radians.
-    float distance_offset       = 10.0f;        // distance from camera to target.
-
-    // functions.
-    glm::vec3 get_position(glm::vec3 target);   // return camera position relative to target.
-    Camera(int size);
-    void get_input();                           // get input + calc orientation using input.
-    void update(glm::vec3 target);              // update the camera view matrix.
+    float distance_offset       = 5.0f;        // distance from camera to target.
 
     // shadowmap.
-    // std::array<GLuint, 3> depth_maps;
-    // std::array<glm::mat4, 3> cascade_proj;
-    // std::array<float, 3> cascade_bounds {
-    //     32.0f, 128.0f, 512.0f
-    // };
+    GLuint FBO;
+    std::array<GLuint, NUM_CASCADES> depth_maps;
+    std::array<glm::mat4, NUM_CASCADES> cascade_proj;
+    std::array<float, NUM_CASCADES> cascade_bounds;
 
-    // int shadowmap_size;
-    // GLuint FBO;
-    // void get_light_projection(glm::vec3 &light_direction);
-    // void update_uniforms(Shader &shader, glm::vec3 &light_pos);
+    // functions.
+    Camera();
+    void get_input(double dt);                           // get input + calc orientation using input.
+    glm::vec3 get_position(glm::vec3 target);   // return camera position relative to target.
+    void update(glm::vec3 target);              // update the camera view matrix.
+    void get_cascades();
 };

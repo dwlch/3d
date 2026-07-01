@@ -39,6 +39,8 @@ Shader::Shader(const GLenum mode, std::string vert_file, std::string frag_file)
     // they have been linked to the program shader so no longer needed.
     glDeleteShader(vert_shader);
     glDeleteShader(frag_shader);
+
+    // std::cout << "shader ID: " << vert_file << " "<< ID << "\n";
 }
 
 void Shader::compile_errors(unsigned int shader, const char* type)

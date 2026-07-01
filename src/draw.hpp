@@ -9,9 +9,11 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "shader.hpp"   // for updating shader uniforms per mesh.
+#include "camera.hpp"
 
 #define MAX_JOINTS 100
 
+// referenced: https://github.com/SaschaWillems/Vulkan/blob/master/examples/gltfskinning/gltfskinning.cpp
 // store vertex information from gltf file.
 struct Vertex
 {
@@ -20,47 +22,100 @@ struct Vertex
 	glm::vec3 color;
 	glm::vec2 texUV;
     glm::vec4 joint_indices;    // vertex has at most 4 joint IDs it is connected to.
-    glm::vec4 joint_weights;    // for each joint, there is an associatd weight value.
+    glm::vec4 joint_weights;    // for each joint, there is an associated weight value.
 };
 
-// referenced: https://github.com/SaschaWillems/Vulkan/blob/master/examples/gltfskinning/gltfskinning.cpp
-// kinda acts more like a material struct rn.
-// this really only needs to be an ID value honestly lol.
-struct Texture
-{
-    GLuint ID;
-    GLenum format;
-    GLenum type;
-    std::string name;
-
-    Texture(std::string &filename, int &width, int &height, int &component, int &bits, unsigned char* image_data);
-};
-
+// store texture, colour etc of mesh.
 struct Material
 {
-    glm::vec4 base_colour = glm::vec4(1.0f);
-    uint32_t base_colour_texture_index;
+    glm::vec4 base_colour = glm::vec4(1.0f);    // material colour, defaults to white.
+    uint32_t texture_ID;                        // id of the materials texture.
 };
 
 struct MeshPrimitive
 {
+    // determines the type of the mesh.
+    enum Type
+    {
+        COLLIDER,
+        TRIGGER
+    };
+
+    
+
+
+
     GLuint VAO; // vertex array object.
     GLuint VBO; // vertex buffer object array.
     GLuint EBO; // element buffer object.
 
     uint32_t first_index;
-    uint32_t index_count;
-    int32_t material_index; // index of mesh's material.
+    uint32_t index_count;   // number of indices in the mesh.
+    int32_t material_index; // index of the mesh's material in the model's materials array.
 
-    // i actually think we want a vertex buffer per node, not model, otherwise the collision wont work.
-    // oh or could just have a dedicated mesh_collider_vertices vector lol.
-    std::vector<uint32_t> index_buffer;
-    std::vector<Vertex> vertex_buffer;
-    std::vector<Vertex> vertex_collider_buffer;
+    std::vector<uint32_t> index_buffer;             // stores the list of indices.
+    std::vector<Vertex> vertex_buffer;              // stores the raw vertices.
+
+
+    // collision info.
+    Type type;
+    std::vector<glm::vec3> vertex_collider_buffer;  // vertices with node matrix applied, used for collision meshes.
+
+    int target_level = 0;
+    glm::vec3 spawn = glm::vec3(0.0f);              // spawn point for level changes.
+
+
+    // bool is_trigger;    // flag if collider is also a trigger collider? not sure if this should go here or not.
+    // maybe this should be an enum rather than a bunch of bools?
+    // enum TRIGGER, COLLIDER etc
+
+
+
+
+
 };
 
+// a type of mesh. procedural grid generated based on number of given slices.
+struct Circle
+{
+    MeshPrimitive mesh;
+    std::array<glm::mat4, MAX_JOINTS> joint_matrix;
+
+    Circle(float radius);
+    void draw(glm::vec3 position, Shader shader, Camera camera, glm::vec3 colour);
+};
+
+struct Line
+{
+    MeshPrimitive mesh;
+    std::array<glm::mat4, MAX_JOINTS> joint_matrix;
+
+    Line(glm::vec3 angle, float length);
+    void draw(glm::vec3 position, glm::quat rotation, Shader shader, glm::vec3 colour);
+};
+
+struct Frustum
+{
+    MeshPrimitive mesh;
+    std::array<glm::mat4, MAX_JOINTS> joint_matrix;
+
+    Frustum(std::vector<glm::vec4> corners);
+    void draw(glm::vec3 position, Shader shader);
+};
+
+// a type of mesh. procedural grid generated based on number of given slices.
+// struct Grid
+// {
+//     int slices; // number of grid slices.
+//     MeshPrimitive mesh;
+//     std::array<glm::mat4, MAX_JOINTS> joint_matrix;
+
+//     Grid(int slices);
+//     void draw(Shader shader);
+// };
+
 // decribes a single node in the gltf file.
-struct Node; // recursive?
+struct Node; // so nodes can have parent nodes.
 struct Node
 {
     Node *                      parent;
@@ -83,7 +138,7 @@ struct Skin
     Node *                              skeleton_root = nullptr;
     std::vector<glm::mat4>              inverse_bind_matrices;
     std::vector<Node *>                 joints;
-    std::array<glm::mat4, MAX_JOINTS>   joint_matrix;
+    std::array<glm::mat4, MAX_JOINTS>   joint_matrix = {glm::mat4(1.0f)};
 };
 
 
@@ -111,107 +166,56 @@ struct Animation
     float start                     = std::numeric_limits<float>::max();
     float end                       = std::numeric_limits<float>::min();
     float current_time              = 0.0f;
+    bool loop                       = true;
+    void reset();
 };
 
-// deprecating this rn, is just being used for collider loading atm.
-struct Mesh
-{
-    std::vector<Vertex> vertices;       // store vertices publicly for collision load?
-    std::vector<GLuint> indices;        // indice for each face.
-
-
-    GLuint VAO; // vertex array object.
-    GLuint VBO; // vertex buffer object array.
-    GLuint EBO; // element buffer object.
-    int type;   // 0 = solid, 1 = passable, 2 = trigger.
-
-    Mesh();
-    Mesh(std::vector<Vertex> &vertices, std::vector<GLuint> &indices, int type);
-};
 
 // model class which contains a number of meshes which are drawn individually.
+// could make this like the colliders and have inheritence so can have mesh, circle, frustum etc.
 struct Model
 {
-    std::vector<Mesh>       meshes;     // store each mesh in the .gltf file seperately as a mesh object.
-    std::vector<Node *>     nodes;      // store all nodes. replacing meshes with nodes atm.
-    std::vector<Texture>    textures;   // load each texture only once and copy from here if duplicate. per model.
-    std::vector<Material>   materials;
-    std::vector<Skin>       skins;  // armature per mesh? i think that's how it works.
-    std::vector<Animation>  animations;
+    std::vector<Node *>     nodes;      // a node has a mesh and inheritence hierarchy.
+    std::vector<Material>   materials;  // materials (colour, texture, can add more stuff like normals).
+    std::vector<Skin>       skins;      // armature per mesh? i think that's how it works.
+    std::vector<Animation>  animations; // each animation accessed by the index.
 
-    uint32_t active_animation = 0;
+    uint32_t active_animation = 0;      // general format: 0 = idle, 1 = walk, 2 = jump/fall.
 
-    Model();
+    Model() {}; // default constructor.
     Model(std::string filename);
     Node *find_node(Node *parent, uint32_t index);
     Node *node_from_index(uint32_t index);
     void bind_node(Node *node);
     void draw_node(Node node, GLenum mode, glm::mat4 transform, Shader shader);
-    void draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, glm::vec3 colour);
+    void draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, Camera camera, glm::vec3 colour);
     void update_joints(Node *node);
-    void update_animations(float delta_time);
+    void update_animations(float delta_time, uint32_t animation_index);
     void load_material(tinygltf::Model &input);
     void load_node(const tinygltf::Node &input_node, tinygltf::Model &input, Node *parent, uint32_t node_index, std::vector<uint32_t> &index_buffer, std::vector<Vertex> &vertex_buffer);
     void load_skins(tinygltf::Model &input);
     void load_animations(tinygltf::Model &input);
 };
 
-// a type of mesh. procedural grid generated based on number of given slices.
-class Grid
-{
-    public:
-        Grid(int slices);
-        void draw(Shader shader);
-
-    private:
-        int slices;                                     // number of grid slices.
-        std::vector<Vertex> vertices;                   // grid vertices stored here.
-        std::vector<GLuint> indices;                    // grid indices.
-        Mesh mesh = Mesh(vertices, indices, 1);  // mesh to store above in.
-};
-
-// a type of mesh. procedural grid generated based on number of given slices.
-class Frustum
-{
-    public:
-        Frustum(std::vector<glm::vec4> corners);
-        void draw(glm::vec3 position, Shader shader);
-
-    private:
-        std::vector<Vertex> vertices;                   // grid vertices stored here.
-        std::vector<GLuint> indices;                    // grid indices.
-        Mesh mesh = Mesh(vertices, indices, 1);  // mesh to store above in.
-};
-
-// a type of mesh. procedural grid generated based on number of given slices.
-class Circle
-{
-    public:
-        Circle(float radius);
-        void draw(glm::vec3 position, Shader shader, glm::vec3 colour);
-
-    private:
-        GLuint VAO; // vertex array object.
-        GLuint VBO; // vertex buffer object array.
-        GLuint EBO; // element buffer object.
-        std::vector<Vertex> vertices;                   // grid vertices stored here.
-        std::vector<GLuint> indices;                    // grid indices.
-};
-
-
 
 // basically a quad that draws the scene w/ post-processing added.
 struct ScreenTexture
 {
-    GLuint ID;
+    GLuint color_buffers[2];
+    GLuint pingpong_buffers[2];
+
     GLuint VAO;
     GLuint VBO;
     GLuint RBO;
-    GLuint FBO;
-    float gamma = 0.9f;
+
+    GLuint screen_FBO;
+    GLuint pingpong_FBO[2];
+    
+    float gamma = 0.8f;
+    bool bloom;
 
     ScreenTexture();
-    void draw(Shader &shader);
+    void draw(Shader &screen_shader, Shader &blur_shader);
 };
 
 // drawing 2d text to screen from texture.
@@ -230,4 +234,22 @@ struct Image2D
 
     Image2D(std::string filename);
     void draw(float x, float y, float scale);
+};
+
+struct Skybox
+{
+    GLuint ID;
+    GLuint VAO;
+    GLuint VBO;
+    
+    Model cube_mesh = Model("cube.gltf");
+    std::array<std::string, 6> filenames = {
+        "pos_x", "neg_x",
+        "pos_y", "neg_y",
+        "pos_z", "neg_z"
+    };
+
+    Skybox() {}; // default constructor.
+    Skybox(int level_index);
+    void draw(glm::vec3 position, Shader shader, Camera camera);
 };

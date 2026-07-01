@@ -17,22 +17,22 @@ uniform float camera_distance;              // distance from player to camera.
 uniform vec3 albedo;                        // base colour, used for 'ingame' colours.
 uniform vec3 light_pos;                     // directional light position.
 
-out vec4 final_color;
+layout (location = 0) out vec4 final_color;
+layout (location = 1) out vec4 bright_color;
 
 // returns which shadowmap cascade the fragment is inside.
-int get_cascade()
+int get_cascade(float dist)
 {
-    // get distance from current fragment to the camera.
-    float d = gl_FragCoord.z / gl_FragCoord.w;
-
     // check from closest to second furthest away.
-    for (int i = 0; i < NUM_CASCADES - 1; i++)
+    for (int i = 0; i < NUM_CASCADES - 1; ++i)
     {
-        if (d < cascade_bounds[i])
+        // check distance from current fragment to the camera vs current cascade bound.
+        if (dist < cascade_bounds[i])
         {
             return i;
         }
     }
+
     // return largest cascade in this case.
     return NUM_CASCADES - 1;
 }
@@ -45,9 +45,9 @@ float bilinear_pcf(vec3 shadow_coords, int cascade_index)
     vec2 frac       = fract(shadow_coords.xy * textureSize(shadow_map[cascade_index], 0) + 0.5);
     vec2 texel_size = 1.0 / textureSize(shadow_map[cascade_index], 0);
     
-    for (int x = -1; x <= 1; x++)
+    for (int x = -1; x <= 1; ++x)
     {
-        for (int y = -1; y <= 1; y++)
+        for (int y = -1; y <= 1; ++y)
         {
             vec2 offset = vec2(x, y) * texel_size;
             vec4 temp   = textureGather(shadow_map[cascade_index], shadow_coords.xy + offset);
@@ -63,9 +63,10 @@ float bilinear_pcf(vec3 shadow_coords, int cascade_index)
     return (shadow / float(pow(2 + 1, 2)));
 }
 
-float pcss(float intensity, float lol)
+float get_shadow(float intensity, float lol)
 {
-    int current_map   = get_cascade();
+    float dist          = gl_FragCoord.z / gl_FragCoord.w;
+    int current_map     = get_cascade(dist);
     float shadow        = lol;
     vec3 shadow_coords  = ((frag_shadowcoords[current_map].xyz / frag_shadowcoords[current_map].w) + 1.0) / 2.0;
 
@@ -85,13 +86,6 @@ float pcss(float intensity, float lol)
     }
 
     return clamp(shadow, intensity, 1.0);
-
-    // vec3 shadow_coords = ((frag_shadowcoords.xyz / frag_shadowcoords.w) + 1.0) / 2.0;
-    // if (shadow_coords.z > 1.0)
-    // {
-    //     return 1.0;
-    // }
-    // return clamp(shadow, intensity, 1.0);
 }
 
 // get depth fog value.
@@ -110,12 +104,18 @@ void main()
 
     // normal dot light.
     float NdotL         = max(dot(frag_normal, light_dir), 0.0);
-    float shadow_smooth = 0.1;
+    float shadow_smooth = 0.0;
     float intensity     = smoothstep(0, shadow_smooth, NdotL);
 
     // get the emission and diffuse terms.
     vec3 emission       = texture(tex0, frag_texcoord).rgb * albedo;
     vec3 diffuse        = texture(tex0, frag_texcoord).rgb * light_colour;
+    vec3 base_color     = emission + diffuse;
+    // vec3 y_gradient     = vec3(clamp(frag_position.y, -1.0, 1.0));
+
+    // base_color = y_gradient;
+
+    // base_color          = vec3(base_color.x, base_color.y * frag_normal.y , base_color.z);
     
     // fog calculation using depth buffer.
     // get fog depth according to steepness of gradient and distance offset.
@@ -123,6 +123,18 @@ void main()
     vec3 fog_color      = fog_depth * vec3(1.0);
 
     // combine all terms with fog.
-    final_color = vec4((emission + diffuse) * (pcss(0.2, intensity)) * (1.0 - fog_depth) + fog_color, 1.0);
+    final_color = vec4(base_color * (get_shadow(0.35, intensity)) * (1.0 - fog_depth) + fog_color, 1.0);
+
+    vec3 threshold      = vec3(0.2126, 0.7152, 0.0722);
+    // vec3 threshold      = vec3(0.9);
+    float brightness = dot(final_color.rgb, threshold);
+    if (brightness > 1.0)
+    {
+        bright_color = vec4(final_color.rgb, 1.0);
+    }
+    else
+    {
+        bright_color = vec4(vec3(0.0), 1.0);
+    }
 }
 

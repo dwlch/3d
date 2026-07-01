@@ -1,17 +1,11 @@
 #version 330 core
 
-// input vertex attributes (from vertex shader)
-in vec3 fragPosition;   // fragment position.
-in vec3 fragNormal;     // fragment normal.
-in vec3 fragColor;      // colour of the fragment.
-in vec2 fragTexCoord;   // fragment texture coordinates.
-in vec4 fragPosLight;   // positions from from light perspective.
+uniform vec3 albedo;    // base colour, used for 'ingame' colours.
 
-uniform vec3 diffuse;       // base colour.
-
-out vec4 finalColor;        // output fragment color
+out vec4 final_color;
 
 void main()
 {
-    finalColor = vec4(5.0);
+    vec3 colour = vec3(10.0, 10.0, 10.0);
+    final_color = vec4(albedo, 1.0);
 }

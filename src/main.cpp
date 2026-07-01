@@ -4,26 +4,26 @@ version start date : 22 08 2022.
 */
 
 // c++ includes.
-#include <iostream>
-#include <vector>
-#include <array>        // for shader array.
-#include <memory>       // for collision array.
+#include <iostream>     // console printing.
+#include <array>        // shader array.
+#include <chrono>       // needed for timestep.
 
 // GL includes.
 #include "glad.h"
 #include "GLFW/glfw3.h"
 #include "glm/glm.hpp"
-#include <glm/gtc/type_ptr.hpp>
+#include "glm/gtc/type_ptr.hpp"
 
 // internal includes.
-#include "defines.hpp"
-#include "camera.hpp"
-#include "shader.hpp"
-#include "draw.hpp"
-#include "collision.hpp"
-#include "player.hpp"
-#include "input.hpp"
-#include "shadowmap.hpp"
+#include "defines.hpp"      // global variables.
+#include "camera.hpp"       // camera + shadowmap.
+#include "shader.hpp"       // shader loading.
+#include "draw.hpp"         // gltf model loading + some primitive mesh stuff.
+#include "collision.hpp"    // gjk + epa collision implementation, also level loading.
+#include "player.hpp"       // player controller.
+#include "npc.hpp"          // npcs. (might factor some of this elsewhere).
+#include "level.hpp"        // handles level loading.
+#include "input.hpp"        // input handler (needs some work).
 
 // plan to use this enum to toggle level editor.
 enum Mode
@@ -32,7 +32,68 @@ enum Mode
     EDIT
 };
 
-Mode mode = Mode::GAME;
+// global stuff.
+Mode mode   = Mode::GAME;
+bool debug  = false;
+
+void update(Player &player, Camera &camera, Level &level, double dt)
+{
+    // basically anything that moves needs the dt value:
+    // player position (xy movement, jumping).
+    // camera pitch and yaw.
+    // also all lerp values need dt as well? ig bcos they constitute the final term,
+    // but u dont want to * dt the entire value because that would get rid of the lerp i think?
+
+    for (size_t i = 0; i < level.npcs.size(); ++i)
+    {
+        level.npcs[i].update(dt);
+    }
+    camera.get_input(dt);                   // camera input, calculates camera orientation vec3.
+    player.update(dt, level, camera);       // player input and movement, sent a vector of colliders.
+    camera.update(player.camera_lookat);    // update camera matrix using target position.
+    update_inputs();
+}
+
+void draw(Camera camera, ScreenTexture screen, std::array<Shader, SHADER_COUNT> shader, Player player, Level &level)
+{
+    // draw to shadowmaps.
+    glViewport(0, 0, SHADOWMAP_SIZE, SHADOWMAP_SIZE);
+    glPolygonOffset(6.0f, 1.0f); // factor, unit.
+    glBindFramebuffer(GL_FRAMEBUFFER, camera.FBO);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // this could be organised/factored better.
+    // the prob is that you need to call the draw functions inside this, and i dont want to have to pass the models to the camera etc.
+    // but does it need to be inside the camera? maybe this should just be in the draw file, but then it's already got so much stuff...
+    camera.get_cascades();
+    glUseProgram(shader[SHADER_SHADOWMAP].ID);
+
+    // do for each cascade in the shadowmap array.
+    for (int i = 0; i < NUM_CASCADES; ++i)
+    {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, camera.depth_maps[i], 0);
+        glUniformMatrix4fv(glGetUniformLocation(shader[SHADER_SHADOWMAP].ID, "light"), 1, GL_FALSE, glm::value_ptr(camera.cascade_proj[i]));
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        // render geometry to the current cascade.
+        player.draw(shader[SHADER_SHADOWMAP], shader[SHADER_SHADOWMAP], camera, false);
+        level.draw(shader[SHADER_SHADOWMAP], shader[SHADER_SKYBOX], shader[SHADER_SHADOWMAP], shader[SHADER_LINE], camera);
+    }
+
+    // draw to screen texture.
+    glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+    glPolygonOffset(0, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, screen.screen_FBO);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // draw scene to post-process framebuffer.
+    player.draw(shader[SHADER_CEL], shader[SHADER_LINE], camera, debug);
+    level.draw(shader[SHADER_DEFAULT], shader[SHADER_SKYBOX], shader[SHADER_CEL], shader[SHADER_LINE], camera);
+    level.skybox.draw(player.position, shader[SHADER_SKYBOX], camera);
+    
+    // finally, draw the screen framebuffer.
+    screen.draw(shader[SHADER_FRAMEBUFFER], shader[SHADER_BLUR]);
+}
 
 int main(void)
 {
@@ -67,98 +128,58 @@ int main(void)
     glEnable(GL_CULL_FACE);                         // enable face culling.
     glEnable(GL_POLYGON_OFFSET_FILL);               // "slope scale depth bias".
     glEnable(GL_MULTISAMPLE);
-    glDepthFunc(GL_LESS);                           // GL_LESS passes if new depth value is LESS than the stored depth value.
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);         // gets rid of seams in skybox edges.
+    glDepthFunc(GL_LEQUAL);                         // GL_LESS passes if new depth value is LESS than the stored depth value.
     glCullFace(GL_BACK);                            // cull back faces.
     glCullFace(GL_CCW);                             // counter clockwise indice order.
     
-    // can probs trim these down, dont want to do any fancy shaders anymore rlly, just shadows.
     std::array<Shader, SHADER_COUNT> shader = {                     // array of all shaders, 0 is always screen/post-process shader.
         Shader(GL_FILL, "framebuffer.vert", "framebuffer.frag"),    // post process framebuffer shader.
         Shader(GL_FILL, "shadow_map.vert",  "shadow_map.frag"),     // shadowmap shader.
         Shader(GL_FILL, "default.vert",     "default.frag"),        // default material shader.
         Shader(GL_FILL, "cel.vert",         "cel.frag"),            // character model shader.
-        Shader(GL_LINE, "default.vert",     "line.frag")            // wireframe shader.
+        Shader(GL_LINE, "default.vert",     "line.frag"),           // wireframe shader.
+        Shader(GL_FILL, "skybox.vert",      "skybox.frag"),         // skybox shader.
+        Shader(GL_FILL, "blur.vert",        "blur.frag")            // blur shader.
     };
 
-    // array of levels, which are just gltf files.
-    // should probably do it recursively like "scene_" & i etc.
-    std::array<Model, LEVEL_COUNT> level = {
-        Model("scene_0000.gltf"),
-        Model("scene_0001.gltf")
-    };
+    // could prob organise this a bit better? tho i guess having some kind of 'game' class to create all of these is just redundant fluff.
+    // i guess eventually would need some kind of save thing? idk if i rlly want to deal with that kind of thing though.
+    Player player("boar_pig.gltf");
+    Camera camera;
+    Level level(player.current_level);  // load initial level based on player's level.
+    ScreenTexture screen;               // should this be in camera?
 
-    // vector array of any colliders to test against player in update.
-    // contents rewritten on level load etc.
-    std::vector<std::unique_ptr<Collider>> colliders;
-    int current_level = 0;
-    get_colliders_from_level(level[current_level], colliders);
+    // fixed timestep setup. -- could get moved to a struct/something maybe.
+    const double dt     = 1.0 / 60.0;   // base 60fps.
+    // double t            = 0.0;          // time game has been running.
+    double accumulator  = 0.0;          // only update game when > delta time.
+    double global_speed = 1.0;          // controls global speed of the game.
+    auto prev_time      = std::chrono::high_resolution_clock::now();
 
-    // mandatory inits.
-    Player player;
-    Camera camera(SHADOWMAP_SIZE);
-    ShadowMap shadowmap(SHADOWMAP_SIZE);
-    ScreenTexture screen;
-    
-    // maybe should make a 'light' struct that has these properties?
-    glm::vec3 light_pos         = glm::vec3(0.7f, 1.0f, 0.3f);
-    glm::vec3 light_target      = glm::vec3(0.0f);
-    float dt                    = 0.01f;
-
+    // main loop.
     while(!glfwWindowShouldClose(window))
     {
-        // update step.
+        auto current_time       = std::chrono::high_resolution_clock::now();
+        double frame_duration   = global_speed * (std::chrono::duration<double>(current_time - prev_time).count());
+        // std::cout << "Frame duration: " << frame_duration << "ms" << "\n";
+        // std::cout << "FPS: " << 1.0 / frame_duration << "\n";
+        // std::cout << "Time: " << t << "ms" << "\n";
+
+        accumulator += frame_duration;
+        prev_time   = current_time;
+
+        // update.
+        for (; accumulator >= dt; accumulator -= dt)
         {
-            camera.get_input();                     // camera input, calculates camera orientation vec3.
-            player.update(dt, colliders, camera);   // player input and movement, sent a vector of colliders.
-            camera.update(player.camera_lookat);    // update camera matrix using target position.
+            update(player, camera, level, dt);
+            // t += dt;
         }
-
-        // draw step.
-        {
-            // shadowmap pass. could this be all moved into shadowmap.cpp? 
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            glViewport(0, 0, shadowmap.size, shadowmap.size);
-            glUseProgram(shader[SHADER_SHADOWMAP].ID);
-            glPolygonOffset(6.0f, 1.0f); // factor, unit.
-            
-            // get shadowmap cascade matrices.
-            glm::vec3 light_direction = glm::vec3(glm::normalize(light_pos - light_target));
-            shadowmap.get_light_projection(camera, light_direction);
-
-            // do for each cascade in the shadowmap array.
-            for (int i = 0; i < NUM_CASCADES; ++i)
-            {
-                glBindFramebuffer(GL_FRAMEBUFFER, shadowmap.FBO);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowmap.depth_maps[i], 0);
-                glUniformMatrix4fv(glGetUniformLocation(shader[SHADER_SHADOWMAP].ID, "light"), 1, GL_FALSE, glm::value_ptr(shadowmap.cascade_proj[i]));
-                glClear(GL_DEPTH_BUFFER_BIT);       
-
-                // render geometry to shadow map.
-                player.draw(shader[SHADER_SHADOWMAP], shader[SHADER_SHADOWMAP]);
-                level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_SHADOWMAP], glm::vec3(1.0f));
-            }
-
-            // render pass.
-            glPolygonOffset(0, 0);
-            glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-            glBindFramebuffer(GL_FRAMEBUFFER, screen.FBO);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            
-            // draw scene to post-process framebuffer with shadows applied.
-            // can probably move the shadowmap update stuff into the draw function itself, as this always happens when a draw occurs anyway?
-            shadowmap.update_uniforms(shader[SHADER_CEL], camera, light_pos);
-            player.draw(shader[SHADER_CEL], shader[SHADER_LINE]);
-
-            shadowmap.update_uniforms(shader[SHADER_DEFAULT], camera, light_pos);
-            level[current_level].draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_DEFAULT], glm::vec3(1.0f));
-
-            // finally, draw the screen framebuffer.
-            screen.draw(shader[SHADER_FRAMEBUFFER]);
-        }
-
-        // swap the back buffer with the front buffer + poll IO events.
-		glfwSwapBuffers(window);
-        glfwPollEvents();
+        
+        // draw.
+        draw(camera, screen, shader, player, level);    // always once per frame.
+		glfwSwapBuffers(window);                        // swap the back buffer with the front buffer.
+        glfwPollEvents();                               // poll IO events.
     }
 
     // on exit.
