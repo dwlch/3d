@@ -4,7 +4,7 @@ CXX				:= g++
 CXXFLAGS  		:= -O1 -Wall -Wextra -g -Wno-missing-braces -std=c++20
 # -mwindows		no terminal window.
 
-LDFLAGS 		:= -L lib/ -lglfw3 -lgdi32 -lopengl32
+LDFLAGS 		:= -L lib/ -lglfw3 -lgdi32 -lopengl32 -lole32
 INCLUDE  		:= -I include/
 
 SRCS 			:= $(wildcard src/*.cpp src/*.c)

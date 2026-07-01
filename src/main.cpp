@@ -8,6 +8,11 @@ version start date : 22 08 2022.
 #include <array>        // shader array.
 #include <chrono>       // needed for timestep.
 
+// audio related
+// audio stuff
+// #include <windows.h>
+
+
 // GL includes.
 #include "glad.h"
 #include "GLFW/glfw3.h"
@@ -15,6 +20,7 @@ version start date : 22 08 2022.
 #include "glm/gtc/type_ptr.hpp"
 
 // internal includes.
+#include "audio.hpp"
 #include "defines.hpp"      // global variables.
 #include "camera.hpp"       // camera + shadowmap.
 #include "shader.hpp"       // shader loading.
@@ -24,6 +30,8 @@ version start date : 22 08 2022.
 #include "npc.hpp"          // npcs. (might factor some of this elsewhere).
 #include "level.hpp"        // handles level loading.
 #include "input.hpp"        // input handler (needs some work).
+
+
 
 // plan to use this enum to toggle level editor.
 enum Mode
@@ -36,7 +44,7 @@ enum Mode
 Mode mode   = Mode::GAME;
 bool debug  = false;
 
-void update(Player &player, Camera &camera, Level &level, double dt)
+void update(Player &player, Camera &camera, Level &level, AudioHandler &audio_scene, double dt)
 {
     // basically anything that moves needs the dt value:
     // player position (xy movement, jumping).
@@ -51,6 +59,7 @@ void update(Player &player, Camera &camera, Level &level, double dt)
     camera.get_input(dt);                   // camera input, calculates camera orientation vec3.
     player.update(dt, level, camera);       // player input and movement, sent a vector of colliders.
     camera.update(player.camera_lookat);    // update camera matrix using target position.
+    audio_scene.update();
     update_inputs();
 }
 
@@ -149,6 +158,7 @@ int main(void)
     Camera camera;
     Level level(player.current_level);  // load initial level based on player's level.
     ScreenTexture screen;               // should this be in camera?
+    AudioHandler audio_scene;
 
     // fixed timestep setup. -- could get moved to a struct/something maybe.
     const double dt     = 1.0 / 60.0;   // base 60fps.
@@ -160,6 +170,8 @@ int main(void)
     // main loop.
     while(!glfwWindowShouldClose(window))
     {
+        
+
         auto current_time       = std::chrono::high_resolution_clock::now();
         double frame_duration   = global_speed * (std::chrono::duration<double>(current_time - prev_time).count());
         // std::cout << "Frame duration: " << frame_duration << "ms" << "\n";
@@ -172,15 +184,22 @@ int main(void)
         // update.
         for (; accumulator >= dt; accumulator -= dt)
         {
-            update(player, camera, level, dt);
+            update(player, camera, level, audio_scene, dt);
             // t += dt;
+            
+            
         }
+
         
         // draw.
         draw(camera, screen, shader, player, level);    // always once per frame.
 		glfwSwapBuffers(window);                        // swap the back buffer with the front buffer.
         glfwPollEvents();                               // poll IO events.
     }
+    // audio_client->Stop();
+    // audio_client->Release();
+    // audio_render_client->Release();
+
 
     // on exit.
     // loop through all shaders and delete each one.
