@@ -34,7 +34,7 @@ bool vec2_equals(glm::vec2 a, glm::vec2 b)
 }
 
 // vec3 functions.
-// linear interpolation between two vec2s
+// linear interpolation between two vec3s
 glm::vec3 lerp_vec3(glm::vec3 a, glm::vec3 b, float time)
 {
     glm::vec3 output = glm::vec3(0.0f);

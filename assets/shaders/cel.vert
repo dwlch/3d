@@ -8,11 +8,12 @@ layout (location = 4) in vec4 joints;           // joint IDs.
 layout (location = 5) in vec4 weights;          // joint weights.
 
 #define NUM_CASCADES 3
+#define MAX_JOINTS 100
 
 uniform mat4 mvp;                               // matrix that stores the position, rotation, and scale of a mesh.
-uniform mat4 camera;                            // the projection * view matrix (combined)
+uniform mat4 view;                              // the projection * view matrix (combined)
 uniform mat4 light[NUM_CASCADES];               // light matrix from shadow, one for each cascade.
-uniform mat4 joint_matrices[100];               // array of joint transformations.
+uniform mat4 joint_matrices[MAX_JOINTS];        // array of joint transformations.
 
 out vec3 frag_position;                         // outputs the current position for the Fragment Shader
 out vec3 frag_normal;                           // outputs normal
@@ -28,15 +29,16 @@ void main()
         weights.z * joint_matrices[int(joints.z)] +
         weights.w * joint_matrices[int(joints.w)];
 
-    vec4 position       = mvp * skin * vec4(vertex_position, 1.0);
-    gl_Position         = camera * position;
+    vec4 position       = mvp * (skin * vec4(vertex_position, 1.0));
+    gl_Position         = view * position;
+    frag_position       = vec3(view * position);
     frag_normal         = normalize(vec3(inverse(transpose(mvp * skin)) * vec4(vertex_normal, 1.0)));
     frag_color          = vertex_color;
     frag_texcoord       = vertex_texcoord;
 
 
     // shadowmap.
-    for (int i = 0 ; i < NUM_CASCADES ; ++i)
+    for (int i = 0; i < NUM_CASCADES; ++i)
     {
         frag_shadowcoords[i] = light[i] * position;
     }

@@ -21,13 +21,13 @@ Shader::Shader(const GLenum mode, std::string vert_file, std::string frag_file)
     GLuint vert_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert_shader, 1, &vert_source, NULL);
     glCompileShader(vert_shader);
-    compile_errors(vert_shader, "vert");
+    compile_errors(vert_shader, vert_file.data());
 
     // create fragment shader.
     GLuint frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag_shader, 1, &frag_source, NULL);
     glCompileShader(frag_shader);
-    compile_errors(frag_shader, "frag");
+    compile_errors(frag_shader, frag_file.data());
     
     ID = glCreateProgram();             // create program shader.
     glAttachShader(ID, vert_shader);    // attach vertex shader.
@@ -39,6 +39,8 @@ Shader::Shader(const GLenum mode, std::string vert_file, std::string frag_file)
     // they have been linked to the program shader so no longer needed.
     glDeleteShader(vert_shader);
     glDeleteShader(frag_shader);
+
+    // std::cout << "shader ID: " << vert_file << " "<< ID << "\n";
 }
 
 void Shader::compile_errors(unsigned int shader, const char* type)

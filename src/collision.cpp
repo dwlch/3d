@@ -128,10 +128,10 @@ bool do_simplex(std::vector<glm::vec3> &simplex, glm::vec3 &direction)
 {   
     switch (simplex.size())
     {
-        case 2: return line(simplex, direction);
-        case 3: return triangle(simplex, direction);
-        case 4: return tetrahedron(simplex, direction);
-        default : assert(false);
+        case 2:     return line(simplex, direction);
+        case 3:     return triangle(simplex, direction);
+        case 4:     return tetrahedron(simplex, direction);
+        default:    assert(false);
     }
     return false;
 }
@@ -159,7 +159,7 @@ bool GJK(const Collider *a, const Collider *b, std::vector<glm::vec3> &simplex)
         support = Support(a, b, direction);         // get a new support point using the current search direction.
         if (glm::dot(support, direction) < 0.0f)    // no intersection if origin is beyond support point.
         {
-            break; 
+            break;
         }
         simplex.push_back(support);                 // insert new support into simplex.
         if (do_simplex(simplex, direction))         // returns true if simplex contains the origin in the direction given.
@@ -185,7 +185,7 @@ Face get_closest_face(const Polytope &polytope)
 {
     Face closest_face       = polytope.faces[0];
     closest_face.distance   = FLT_MAX;
-    closest_face.normal     = closest_face.normal;
+    // closest_face.normal     = closest_face.normal;
 
     // check every face in the polytope.
     for (size_t i = 0; i < polytope.face_count; ++i)
@@ -200,7 +200,7 @@ Face get_closest_face(const Polytope &polytope)
             closest_face = face;
         }
     }
-
+    
     assert(closest_face.distance < FLT_MAX);
     return closest_face;
 }
@@ -209,7 +209,7 @@ Face get_closest_face(const Polytope &polytope)
 // references:  https://github.com/ClysmiC/Cataclysm/blob/master/code/Gjk.cpp
 //              https://github.com/kevinmoran/GJK/blob/master/GJK.h
 //              https://github.com/Another-Ghost/3D-Collision-Detection-and-Resolution-Using-GJK-and-EPA/blob/master/CSC8503/CSC8503Common/GJK.cpp
-Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<glm::vec3> &simplex)
+Collision EPA(const Collider *collider_a, const Collider *collider_b, std::vector<glm::vec3> &simplex)
 {
     // create a polytope from the simplex we got from succesful GJK intersection.
     vec3 a = simplex[3];
@@ -223,7 +223,7 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
     add_to_polytope(polytope, Face(a, b, d));
     add_to_polytope(polytope, Face(b, c, d));
 
-    Results results;    // combined angle of collision * depth.
+    Collision results;  // combined angle of collision * depth.
     Face closest_face;  // store most recent closest face.
 
     for (unsigned int i = 0; i < EPA_MAX_ITERATIONS; ++i)
@@ -276,7 +276,7 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
                     {
                         if (edges_count >= EPA_MAX_EDGES)
                         {
-                            //cout << "max edges reached: " << edges_count << "\n";
+                            std::cout << "Max edges reached: " << edges_count << "\n";
                             break;
                         }
                         edges[edges_count] = edge;
@@ -297,7 +297,7 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
         {
             if (polytope.face_count >= EPA_MAX_FACES) 
             {   
-                //cout << "max faces reached: " << polytope.face_count << "\n";
+                cout << "Max faces reached: " << polytope.face_count << "\n";
                 break;
             }
             Face face = Face(edges[i].first, edges[i].second, support);
@@ -325,46 +325,30 @@ Results EPA(const Collider *collider_a, const Collider *collider_b, std::vector<
 }
 
 // this function actually does the GJK check + EPA, and returns the values as a Results struct
-Results is_collision(const Collider *a, const Collider *b)
+Collision is_collision(const Collider *a, const Collider *b)
 {
-    Results test;                   // stores the info from collision test.
+    Collision collision;            // stores the info from collision test.
     std::vector<glm::vec3> simplex; // simplex constructed in GJK step, iterated on in EPA to get penetration.
     simplex.reserve(4);
 
     if (GJK(a, b, simplex))
     {
-        test            = EPA(a, b, simplex);
-        test.collided   = true;
+        collision            = EPA(a, b, simplex);
+        collision.collided   = true;
     }
     else 
     {
-        test.collided   = false;
+        collision.collided   = false;
     }
-    return test;
-}
 
-// return vector of colliders from given level gltf file.
-void get_colliders_from_level(Model &level, std::vector<std::unique_ptr<Collider>> &colliders)
-{
-    colliders.clear();
-    for (size_t i = 0; i < level.meshes.size(); ++i)
+    if (a->is_trigger || b->is_trigger)
     {
-        if (level.meshes[i].type == 0)
-        {
-            colliders.push_back(std::move(std::unique_ptr<Collider>(new MeshCollider(level.meshes[i]))));
-        }  
+        collision.is_trigger = true;
+    }
+    else
+    {
+        collision.is_trigger = false;
     }
 
-    // so rather than just looping thru mesh, loop thru nodes, then each node's mesh primitives.
-    // for (auto node : level.nodes)
-    // {
-    //     for (auto mesh : node->mesh_primitives)
-    //     {
-    //         colliders.push_back(std::move(std::unique_ptr<Collider>(new MeshCollider(level.meshes[i]))));
-    //     }
-    // }
-
-
-
-    std::cout << "level loaded!" << "\n\n";
+    return collision;
 }
