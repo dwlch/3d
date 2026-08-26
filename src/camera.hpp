@@ -14,6 +14,7 @@ struct CameraRail
 
 };
 
+
 struct Camera
 {
     glm::mat4 projection        = glm::mat4(1.0f);
@@ -57,4 +58,39 @@ struct Camera
     glm::vec3 get_position(glm::vec3 target);   // return camera position relative to target.
     void update(glm::vec3 target);              // update the camera view matrix.
     void get_cascades(glm::vec3 light_position);
+};
+
+
+struct Plane
+{
+    glm::vec3 normal    = glm::vec3(0.0f, 1.0f, 0.0f);
+    float distance      = 0.0f;
+
+    Plane() {};
+    Plane(const glm::vec3 &p1, const glm::vec3 &norm) : normal(glm::normalize(norm)), distance(glm::dot(normal, p1)) {}
+
+    void normalize()
+    {
+        float length    = glm::length(normal);
+        normal          /= length;
+        distance        /= length;
+    }
+
+};
+
+struct Frustum
+{
+    Plane top;
+    Plane bottom;
+
+    Plane right;
+    Plane left;
+
+    Plane far_;
+    Plane near_;
+
+    std::array<Plane, 6> planes;
+
+    Frustum(const glm::mat4& mvp);
+    bool is_inside(const glm::vec3& min, const glm::vec3& max);
 };

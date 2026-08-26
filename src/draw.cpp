@@ -38,25 +38,25 @@ Circle::Circle(float radius)
 }
 
 // draw circle.
-void Circle::draw(glm::vec3 position, Shader shader, Camera camera, glm::vec3 colour)
+void Circle::draw(glm::vec3 position, int shader, Camera camera, glm::vec3 colour)
 {
     glm::quat rotation  = glm::quat(glm::vec3(0.0f));
     glm::vec3 scale     = glm::vec3(1.0f);
     glm::mat4 mvp       = translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
 
     // draw mesh with GL_LINES.
-    glUseProgram(shader.ID);    // activate the shader being used to draw this model. (potential for multiple shaders per model?)
+    glUseProgram(shader);    // activate the shader being used to draw this model. (potential for multiple shaders per model?)
     
     // per mesh shader updates; colour and combined matrix transformation.
-    glUniform3fv(glGetUniformLocation(shader.ID, "albedo"), 1, glm::value_ptr(colour));   
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "joint_matrices"), MAX_JOINTS, GL_FALSE, glm::value_ptr(joint_matrix[0]));
+    glUniform3fv(glGetUniformLocation(shader, "albedo"), 1, glm::value_ptr(colour));   
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "joint_matrices"), MAX_JOINTS, GL_FALSE, glm::value_ptr(joint_matrix[0]));
     
     glBindVertexArray(mesh.VAO);     // bind the VBO with the vertexes from the mesh.
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(mvp));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "mvp"), 1, GL_FALSE, glm::value_ptr(mvp));
 
     // set polygon mode and then draw elements.
-    glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glLineWidth(1.0f);
     glDrawElements(GL_LINE_LOOP, mesh.index_buffer.size() * sizeof(mesh.index_buffer[0]), GL_UNSIGNED_INT, 0);
 
@@ -150,7 +150,7 @@ ScreenTexture::ScreenTexture()
 }
 
 // draw framebuffer texture to screen.
-void ScreenTexture::draw(Shader &screen_shader, Shader &blur_shader)
+void ScreenTexture::draw(int screen_shader, int blur_shader)
 {
     bool horizontal = true;
     if (bloom)
@@ -159,17 +159,17 @@ void ScreenTexture::draw(Shader &screen_shader, Shader &blur_shader)
         bool first_iteration    = true;
         unsigned int amount     = 10;
 
-        glUseProgram(blur_shader.ID);
+        glUseProgram(blur_shader);
         glBindVertexArray(VAO);
 
         for (unsigned int i = 0; i < amount; ++i)
         {
             glBindFramebuffer(GL_FRAMEBUFFER, pingpong_FBO[horizontal]);
-            glUniform1i(glGetUniformLocation(blur_shader.ID, "horizontal"), horizontal);
+            glUniform1i(glGetUniformLocation(blur_shader, "horizontal"), horizontal);
             glBindTexture(GL_TEXTURE_2D, first_iteration ? color_buffers[1] : pingpong_buffers[!horizontal]);  // bind texture of other framebuffer (or scene if first iteration)
 
             // draw pingpong buffer.
-            glPolygonMode(GL_FRONT_AND_BACK, screen_shader.mode);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glDrawArrays(GL_TRIANGLES, 0, 6);
 
 
@@ -187,7 +187,7 @@ void ScreenTexture::draw(Shader &screen_shader, Shader &blur_shader)
     glClear(GL_COLOR_BUFFER_BIT);
     
     // apply shader and bind texture.
-    glUseProgram(screen_shader.ID);
+    glUseProgram(screen_shader);
     glBindVertexArray(VAO);
 
     glActiveTexture(GL_TEXTURE0);
@@ -197,12 +197,12 @@ void ScreenTexture::draw(Shader &screen_shader, Shader &blur_shader)
     glBindTexture(GL_TEXTURE_2D, pingpong_buffers[!horizontal]);
 
     // send gamma to post process shader.
-    glUniform1i(glGetUniformLocation(screen_shader.ID, "screen_texture"), 0);
-    glUniform1i(glGetUniformLocation(screen_shader.ID, "bloom"), 1);
-    glUniform1f(glGetUniformLocation(screen_shader.ID, "gamma"), gamma);
+    glUniform1i(glGetUniformLocation(screen_shader, "screen_texture"), 0);
+    glUniform1i(glGetUniformLocation(screen_shader, "bloom"), 1);
+    glUniform1f(glGetUniformLocation(screen_shader, "gamma"), gamma);
 
     // draw the framebuffer.
-    glPolygonMode(GL_FRONT_AND_BACK, screen_shader.mode);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glEnable(GL_DEPTH_TEST);
 
@@ -310,31 +310,34 @@ Skybox::Skybox(std::string filename)
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         stbi_image_free(data);
         
-        std::cout << "Loaded cubemap texture: " << filenames[i] << "\n";
+        // std::cout << "Loaded cubemap texture: " << filenames[i] << "\n";
     }
 
     glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 }
 
-void Skybox::draw(glm::vec3 position, Shader shader, Camera camera)
+void Skybox::draw(glm::vec3 position, int shader, Camera camera)
 {
-    glm::mat4 transform = translate(glm::mat4(1.0f), camera.get_position(position))* glm::mat4_cast(glm::quat(glm::vec3(0.0f)))* glm::scale(glm::mat4(1.0f), glm::vec3(camera.FAR_PLANE));
-
+    glm::mat4 transform = translate(glm::mat4(1.0f), camera.get_position(position)) * glm::mat4_cast(glm::quat(glm::vec3(0.0f))) * glm::scale(glm::mat4(1.0f), glm::vec3(camera.FAR_PLANE));
+    Frustum frustum(camera.mvp);
 
     glCullFace(GL_FRONT);
 
-    glUseProgram(shader.ID);
+    glUseProgram(shader);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, ID);
-    glUniform1i(glGetUniformLocation(shader.ID, "cubemap_texture"), 0);
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(transform));
+    glUniform1i(glGetUniformLocation(shader, "cubemap_texture"), 0);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "mvp"), 1, GL_FALSE, glm::value_ptr(transform));
+    int whatever = 0;
 
     // loop through all nodes in the model.
     for (auto &node : cube_mesh.nodes)
     {
-        cube_mesh.draw_node(*node, GL_TRIANGLES, transform, shader);
+        cube_mesh.draw_node(*node, GL_TRIANGLES, transform, shader, frustum, whatever);
     }
+
+    // cube_mesh.draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader, camera, glm::vec3(1.0f));
 
     glCullFace(GL_BACK);
 }
@@ -394,29 +397,29 @@ Image2D::Image2D(std::string filename)
     stbi_image_free(data);
 }
 
-void Image2D::draw(float x, float y, float scale)
+void Image2D::draw(float x, float y, float scale, int shader)
 {
     glDisable (GL_DEPTH_TEST);
-    glUseProgram(shader.ID);
+    glUseProgram(shader);
     glBindVertexArray(VAO);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, ID);
 
     // send all parameters to shader uniforms.
-    glUniform1f(glGetUniformLocation(shader.ID, "x_pos"), x);
-    glUniform1f(glGetUniformLocation(shader.ID, "y_pos"), y);
-    glUniform1f(glGetUniformLocation(shader.ID, "scale"), scale);
-    glUniform1f(glGetUniformLocation(shader.ID, "window_width"), (float)WINDOW_WIDTH);
-    glUniform1f(glGetUniformLocation(shader.ID, "window_height"), (float)WINDOW_HEIGHT);
-    glUniform1f(glGetUniformLocation(shader.ID, "img_width"), width);
-    glUniform1f(glGetUniformLocation(shader.ID, "img_height"), height);
+    glUniform1f(glGetUniformLocation(shader, "x_pos"), x);
+    glUniform1f(glGetUniformLocation(shader, "y_pos"), y);
+    glUniform1f(glGetUniformLocation(shader, "scale"), scale);
+    glUniform1f(glGetUniformLocation(shader, "window_width"), (float)WINDOW_WIDTH);
+    glUniform1f(glGetUniformLocation(shader, "window_height"), (float)WINDOW_HEIGHT);
+    glUniform1f(glGetUniformLocation(shader, "img_width"), width);
+    glUniform1f(glGetUniformLocation(shader, "img_height"), height);
     
     // enable alpha blending for transparency.
     glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // draw image quad.
-    glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glDisable(GL_BLEND);    // turn off blending.
@@ -562,7 +565,7 @@ Text::Text(std::string font, float scale)
 }
 
 // https://github.com/capnramses/antons_opengl_tutorials_book/blob/9a117a649ae4d21d68d2b75af5232021f5957aac/26_bitmap_fonts/main.cpp#L368
-void Text::draw(std::string content, float at_x, float at_y, Shader shader)
+void Text::draw(std::string content, float at_x, float at_y, int shader)
 {
     if (content.size() == 0)
     {
@@ -659,7 +662,7 @@ void Text::draw(std::string content, float at_x, float at_y, Shader shader)
     
     // DRAW.
     // enable alpha blending for transparency.
-    glUseProgram(shader.ID);
+    glUseProgram(shader);
     glDisable (GL_DEPTH_TEST);
     glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

@@ -16,10 +16,108 @@
 // internal.
 #include "utility.hpp"
 #include "defines.hpp"
-#define SOUNDS_PATH "./assets/sounds/"
 
-// Forward declare internal functions.
-static DWORD CALLBACK audio_thread_proc(LPVOID arg);
+// Entry point for audio thread
+static DWORD CALLBACK audio_thread_proc(LPVOID arg)
+{
+    Win32Audio* audio   = (Win32Audio*)arg;
+    DWORD task          = 0;
+    HANDLE handle       = AvSetMmThreadCharacteristicsW(L"Pro Audio", &task);
+    // assert(handle);
+
+    IAudioClient* client = audio->client;
+
+    IAudioRenderClient* render_client;
+    HRESULT hr = client->GetService(__uuidof(IAudioRenderClient), (LPVOID*)&render_client);
+    // assert(SUCCEEDED(hr));
+
+    UINT32 buffer_samples_count;
+    hr = client->GetBufferSize(&buffer_samples_count);
+
+    std::cout << "buffer_samples_count: " << buffer_samples_count << "\n";
+    // assert(SUCCEEDED(hr));
+
+    hr = client->Start();
+    // assert(SUCCEEDED(hr));
+
+    UINT32 bytes_per_sample = audio->buffer_format->nBlockAlign;
+    UINT32 ring_buffer_mask = audio->ring_buffer_bytes_count - 1;
+    BYTE* ring_buffer       = audio->buffer_1;
+
+
+    // main audio loop.
+    while (WaitForSingleObject(audio->event, INFINITE) == WAIT_OBJECT_0)
+    {
+        if (InterlockedExchange(&audio->stop, FALSE))
+        {
+            break;
+        }
+
+        // How many submitted samples wasapi has left to use
+        UINT32 padding_samples_count;
+        hr = client->GetCurrentPadding(&padding_samples_count);
+        // assert(SUCCEEDED(hr));
+
+        UINT32 sample_count_max = buffer_samples_count - padding_samples_count;
+
+        // Get output buffer from WASAPI
+        BYTE* output_buffer;
+        hr = render_client->GetBuffer(sample_count_max, &output_buffer);
+        // assert(SUCCEEDED(hr));
+
+        AcquireSRWLockExclusive(&audio->lock);
+
+        // Num bytes available to read from ringbuffer
+        UINT32 bytes_avail_count        = audio->ring_buffer_write_offset - audio->ring_buffer_read_offset;
+        UINT32 samples_avail_count      = bytes_avail_count / bytes_per_sample;
+
+        // Clamp to not exceed available space in wasapi buffer
+        UINT32 samples_to_submit_count  = std::min((int)samples_avail_count, (int)sample_count_max);
+        UINT32 bytes_to_read_count      = samples_to_submit_count * bytes_per_sample;
+
+        // Lock the range of ringbuffer we will be reading - [read, lock)
+        // so the main thread can't overwrite it
+        audio->ring_buffer_lock_offset  = audio->ring_buffer_read_offset + bytes_to_read_count;
+        DWORD flags                     = 0;
+
+        // If we have no samples to submit, fill buffer with silence
+        if (samples_to_submit_count == 0)
+        {
+            samples_to_submit_count = sample_count_max;
+            flags                   = AUDCLNT_BUFFERFLAGS_SILENT;
+        }
+
+        // this '2' feels a  bit like it could go many places -- not exactly sure where it should go.
+        // need to double the samples count bcos otherwise it stops halfway through the track bcos im doing it in stereo.
+        // this seems to work fine though so...?
+        // std::cout << "max: " << sample_count_max << "\n";
+        // std::cout << "to submit: " << samples_to_submit_count * 2 << "\n";
+        audio->prev_sample_count += samples_to_submit_count;
+
+        // std::cout << "audio->prev_sample_count: " << audio->prev_sample_count << "\n";
+
+        // Can now unlock buffer for main thread, it won't write in
+        // [read, lock) interval while we're copying to output buffer
+        ReleaseSRWLockExclusive(&audio->lock);
+
+        memcpy(output_buffer, ring_buffer + (audio->ring_buffer_read_offset & ring_buffer_mask), bytes_to_read_count);
+
+        // Unlock bytes in [read, lock) interval of ringbuffer
+        InterlockedAdd(&audio->ring_buffer_read_offset, bytes_to_read_count);
+
+        // Submit output buffer to WASAPI
+        hr = render_client->ReleaseBuffer(samples_to_submit_count, flags);
+        // assert(SUCCEEDED(hr));
+    }
+
+    // Stop playback
+    hr = client->Stop();
+    assert(SUCCEEDED(hr));
+    render_client->Release();
+
+    AvRevertMmThreadCharacteristics(handle);
+    return 0;
+}
 
 DWORD round_up_pow2(DWORD value)
 {
@@ -146,7 +244,6 @@ void Sound::play(Win32AudioWriteContext write_context)
 
     if (is_loop)
     {
-        
         position %= sample_count;
     }
     else
@@ -236,7 +333,7 @@ void Win32AudioStart(Win32Audio* audio, size_t sample_rate, size_t channel_count
         CopyMemory(audio->buffer_format, &format_ext, sizeof(format_ext));
     }
 
-    bool init_success = FALSE;
+    bool init_success = false;
 
     // Try to initialize client with newer functionality in Windows 10, no AUTOCONVERTPCM allowed
     IAudioClient3* client_3;
@@ -253,7 +350,7 @@ void Win32AudioStart(Win32Audio* audio, size_t sample_rate, size_t channel_count
             const DWORD flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
             if (SUCCEEDED(client_3->InitializeSharedAudioStream(flags, minPeriodSamples, wfx, NULL)))
             {
-                init_success = TRUE;
+                init_success = true;
             }
         }
         client_3->Release();
@@ -320,7 +417,7 @@ void Win32AudioStart(Win32Audio* audio, size_t sample_rate, size_t channel_count
     audio->thread = CreateThread(NULL, 0, &audio_thread_proc, audio, 0, NULL);
 }
 
-void Win32Audio::cleanup()
+Win32Audio::~Win32Audio()
 {
     // Notify thread to stop
     InterlockedExchange(&stop, TRUE);
@@ -340,14 +437,13 @@ void Win32Audio::cleanup()
     client->Release();
 
     CoUninitialize();
+
+    std::cout << "Audio ended.\n";
 }
 
+// this is what actually 'plays' the audio.
 Win32AudioWriteContext::Win32AudioWriteContext(Win32Audio* audio, float dt)
 {
-    UINT32 bytes_per_sample         = audio->buffer_format->nBlockAlign;
-    UINT32 ring_buffer_bytes_count  = audio->ring_buffer_bytes_count;
-    UINT32 out_buffer_bytes_count   = audio->out_buffer_bytes_count;
-
     AcquireSRWLockExclusive(&audio->lock);
 
     // How many bytes are in use by audio thread = [read, lock) range
@@ -355,12 +451,12 @@ Win32AudioWriteContext::Win32AudioWriteContext(Win32Audio* audio, float dt)
 
     // Make sure audio thread has locked enough samples to fill output buffer,
     // in case it gets woken before UnlockBuffer is called
-    if (active_bytes_count < out_buffer_bytes_count)
+    if (active_bytes_count < audio->out_buffer_bytes_count)
     {
         // Num bytes we've written to ringbuffer = [read, write) range
         // i.e. upper bound on what audio thread can submit to wasapi
         UINT32 bytes_written_count      = audio->ring_buffer_write_offset - audio->ring_buffer_read_offset;
-        active_bytes_count              = std::min(out_buffer_bytes_count, bytes_written_count);
+        active_bytes_count              = std::min(audio->out_buffer_bytes_count, bytes_written_count);
         audio->ring_buffer_lock_offset  = audio->ring_buffer_read_offset + active_bytes_count;
     }
 
@@ -368,7 +464,7 @@ Win32AudioWriteContext::Win32AudioWriteContext(Win32Audio* audio, float dt)
     audio->ring_buffer_write_offset = audio->ring_buffer_lock_offset;
 
     // How many bytes can be written to buffer
-    UINT32 bytes_avail_count    = ring_buffer_bytes_count - active_bytes_count;
+    UINT32 bytes_avail_count    = audio->ring_buffer_bytes_count - active_bytes_count;
     prev_sample_count           = audio->prev_sample_count * audio->buffer_format->nChannels;
     audio->prev_sample_count    = 0;
 
@@ -376,18 +472,20 @@ Win32AudioWriteContext::Win32AudioWriteContext(Win32Audio* audio, float dt)
 
     // UINT32 write_offset = audio->ring_buffer_write_offset % ring_buffer_bytes_count;
     // Fast modulus because ring_buffer_bytes_count is power of 2
-    UINT32 write_offset         = audio->ring_buffer_write_offset & (ring_buffer_bytes_count - 1);
+    UINT32 write_offset         = audio->ring_buffer_write_offset & (audio->ring_buffer_bytes_count - 1);
+    UINT32 samples_avail_count  = bytes_avail_count / audio->buffer_format->nBlockAlign;
     samples                     = (float*)(audio->buffer_1 + write_offset); // Return pointer to ringbuffer at write offset
-    UINT32 samples_avail_count  = bytes_avail_count / bytes_per_sample;
+    
 
     // Set minNumSamplesToWritePerTick to the max amount of time you expect main
     // loop will take until the next tick. If a tick exceeds this time audio
     // will stutter as audio thread will fill the gap with silence
-    UINT32 min_samples_per_tick = audio->buffer_format->nSamplesPerSec / dt;
+    UINT32 min_samples_per_tick = audio->buffer_format->nSamplesPerSec + dt; // unsure if i should be using delta time here...?
     sample_count                = std::min(min_samples_per_tick, samples_avail_count);
 
+
     // Initialise output buffer to 0 for mixing
-    memset(samples, 0, sample_count * bytes_per_sample);
+    memset(samples, 0, sample_count * audio->buffer_format->nBlockAlign);
 }
 
 void Win32AudioWriteContext::release(Win32Audio* audio)
@@ -399,104 +497,57 @@ void Win32AudioWriteContext::release(Win32Audio* audio)
     InterlockedAdd(&audio->ring_buffer_write_offset, (LONG)bytes_written_count);
 }
 
-// Entry point for audio thread
-static DWORD CALLBACK audio_thread_proc(LPVOID arg)
+void Win32Audio::release()
 {
-    Win32Audio* audio   = (Win32Audio*)arg;
-    DWORD task          = 0;
-    HANDLE handle       = AvSetMmThreadCharacteristicsW(L"Pro Audio", &task);
-    assert(handle);
+    UINT32 bytes_per_sample     = this->buffer_format->nBlockAlign;
+    size_t bytes_written_count  = sample_count * bytes_per_sample;
 
-    IAudioClient* client = audio->client;
+    // Advance write offset to allow audio thread to read new samples.
+    InterlockedAdd(&this->ring_buffer_write_offset, (LONG)bytes_written_count);
+}
 
-    IAudioRenderClient* render_client;
-    HRESULT hr = client->GetService(__uuidof(IAudioRenderClient), (LPVOID*)&render_client);
-    assert(SUCCEEDED(hr));
+void Win32Audio::start_context(float dt)
+{
+    AcquireSRWLockExclusive(&this->lock);
 
-    UINT32 buffer_samples_count;
-    hr = client->GetBufferSize(&buffer_samples_count);
+    // How many bytes are in use by audio thread = [read, lock) range
+    UINT32 active_bytes_count = this->ring_buffer_lock_offset - this->ring_buffer_read_offset;
 
-    std::cout << "buffer_samples_count: " << buffer_samples_count << "\n";
-    // assert(SUCCEEDED(hr));
-
-    hr = client->Start();
-    // assert(SUCCEEDED(hr));
-
-    UINT32 bytes_per_sample = audio->buffer_format->nBlockAlign;
-    UINT32 ring_buffer_mask = audio->ring_buffer_bytes_count - 1;
-    BYTE* ring_buffer       = audio->buffer_1;
-
-
-    // main audio loop.
-    while (WaitForSingleObject(audio->event, INFINITE) == WAIT_OBJECT_0)
+    // Make sure audio thread has locked enough samples to fill output buffer,
+    // in case it gets woken before UnlockBuffer is called
+    if (active_bytes_count < this->out_buffer_bytes_count)
     {
-        if (InterlockedExchange(&audio->stop, FALSE))
-        {
-            break;
-        }
-
-        // How many submitted samples wasapi has left to use
-        UINT32 padding_samples_count;
-        hr = client->GetCurrentPadding(&padding_samples_count);
-        // assert(SUCCEEDED(hr));
-
-        UINT32 sample_count_max = buffer_samples_count - padding_samples_count;
-
-        // Get output buffer from WASAPI
-        BYTE* output_buffer;
-        hr = render_client->GetBuffer(sample_count_max, &output_buffer);
-        // assert(SUCCEEDED(hr));
-
-        AcquireSRWLockExclusive(&audio->lock);
-
-        // Num bytes available to read from ringbuffer
-        UINT32 bytes_avail_count        = audio->ring_buffer_write_offset - audio->ring_buffer_read_offset;
-        UINT32 samples_avail_count      = bytes_avail_count / bytes_per_sample;
-
-        // Clamp to not exceed available space in wasapi buffer
-        UINT32 samples_to_submit_count  = std::min((int)samples_avail_count, (int)sample_count_max);
-        UINT32 bytes_to_read_count      = samples_to_submit_count * bytes_per_sample;
-
-        // Lock the range of ringbuffer we will be reading - [read, lock)
-        // so the main thread can't overwrite it
-        audio->ring_buffer_lock_offset  = audio->ring_buffer_read_offset + bytes_to_read_count;
-        DWORD flags                     = 0;
-
-        // If we have no samples to submit, fill buffer with silence
-        if (samples_to_submit_count == 0)
-        {
-            samples_to_submit_count = sample_count_max;
-            flags                   = AUDCLNT_BUFFERFLAGS_SILENT;
-        }
-
-        // this '2' feels a  bit like it could go many places -- not exactly sure where it should go.
-        // need to double the samples count bcos otherwise it stops halfway through the track bcos im doing it in stereo.
-        // this seems to work fine though so...?
-        // std::cout << "max: " << sample_count_max << "\n";
-        // std::cout << "to submit: " << samples_to_submit_count * 2 << "\n";
-        audio->prev_sample_count += samples_to_submit_count;
-
-        // std::cout << "audio->prev_sample_count: " << audio->prev_sample_count << "\n";
-
-        // Can now unlock buffer for main thread, it won't write in
-        // [read, lock) interval while we're copying to output buffer
-        ReleaseSRWLockExclusive(&audio->lock);
-
-        memcpy(output_buffer, ring_buffer + (audio->ring_buffer_read_offset & ring_buffer_mask), bytes_to_read_count);
-
-        // Unlock bytes in [read, lock) interval of ringbuffer
-        InterlockedAdd(&audio->ring_buffer_read_offset, bytes_to_read_count);
-
-        // Submit output buffer to WASAPI
-        hr = render_client->ReleaseBuffer(samples_to_submit_count, flags);
-        // assert(SUCCEEDED(hr));
+        // Num bytes we've written to ringbuffer = [read, write) range
+        // i.e. upper bound on what audio thread can submit to wasapi
+        UINT32 bytes_written_count      = this->ring_buffer_write_offset - this->ring_buffer_read_offset;
+        active_bytes_count              = std::min(this->out_buffer_bytes_count, bytes_written_count);
+        this->ring_buffer_lock_offset  = this->ring_buffer_read_offset + active_bytes_count;
     }
 
-    // Stop playback
-    hr = client->Stop();
-    assert(SUCCEEDED(hr));
-    render_client->Release();
+    // Set write marker to end of locked region of ringbuffer
+    this->ring_buffer_write_offset = this->ring_buffer_lock_offset;
 
-    AvRevertMmThreadCharacteristics(handle);
-    return 0;
+    // How many bytes can be written to buffer
+    UINT32 bytes_avail_count    = this->ring_buffer_bytes_count - active_bytes_count;
+    prev_sample_count           = this->prev_sample_count * this->buffer_format->nChannels;
+    this->prev_sample_count    = 0;
+
+    ReleaseSRWLockExclusive(&this->lock);
+
+    // UINT32 write_offset = audio->ring_buffer_write_offset % ring_buffer_bytes_count;
+    // Fast modulus because ring_buffer_bytes_count is power of 2
+    UINT32 write_offset         = this->ring_buffer_write_offset & (this->ring_buffer_bytes_count - 1);
+    UINT32 samples_avail_count  = bytes_avail_count / this->buffer_format->nBlockAlign;
+    samples                     = (float*)(this->buffer_1 + write_offset); // Return pointer to ringbuffer at write offset
+    
+
+    // Set minNumSamplesToWritePerTick to the max amount of time you expect main
+    // loop will take until the next tick. If a tick exceeds this time audio
+    // will stutter as audio thread will fill the gap with silence
+    UINT32 min_samples_per_tick = this->buffer_format->nSamplesPerSec + dt; // unsure if i should be using delta time here...?
+    sample_count                = std::min(min_samples_per_tick, samples_avail_count);
+
+
+    // Initialise output buffer to 0 for mixing
+    memset(samples, 0, sample_count * this->buffer_format->nBlockAlign);
 }

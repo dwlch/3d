@@ -1,5 +1,4 @@
 # ignore .wavs (too big)
 *.wav
 
-*/.vscode
-*/.vs
+**/.vscode/

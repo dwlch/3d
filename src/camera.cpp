@@ -173,10 +173,11 @@ void Camera::get_cascades(glm::vec3 light_position)
             float dist  = glm::length(corners[j] - frustum_centre);
             radius      = std::max(radius, dist);
         }
+        // why 16? 8 corners * 2?
         radius = std::ceil(radius * 16.0f) / 16.0f;
 
         // snap shadowmap to texels (removes almost all shimmering/flickering on static shadows).
-        float texels            = static_cast<float>(SHADOWMAP_SIZE) / (radius *  2.0f);
+        float texels            = (float)(SHADOWMAP_SIZE) / (radius *  2.0f);
         glm::mat4 look_at       = glm::lookAt(-light_direction, glm::vec3(0.0f), up) * glm::mat4(texels);
         frustum_centre          = glm::vec3(look_at * glm::vec4(frustum_centre, 1.0f));
         frustum_centre.x        = glm::floor(frustum_centre.x);
@@ -188,5 +189,76 @@ void Camera::get_cascades(glm::vec3 light_position)
         glm::mat4 light_view    = glm::lookAt(frustum_centre, light_target, up);
         glm::mat4 light_proj    = glm::ortho(-radius, radius, -radius, radius, -radius * 2.0f, radius * 2.0f);
         cascade_proj[i]         = light_proj * light_view;
+    }
+}
+
+// returns true if given bounding box (min and max) is inside frustum.
+bool Frustum::is_inside(const glm::vec3& min, const glm::vec3& max)
+{
+    for (int i = 0; i < 6; ++i)
+    {
+        const glm::vec3& normal = planes[i].normal;
+
+        glm::vec3 p_vertex = min;
+
+        if (normal.x >= 0.0f) p_vertex.x = max.x;
+        if (normal.y >= 0.0f) p_vertex.y = max.y;
+        if (normal.z >= 0.0f) p_vertex.z = max.z;
+
+        // Test only the p-vertex against the plane
+        float distance = glm::dot(normal, p_vertex) + planes[i].distance;
+
+        // If the vertex furthest in the direction of the normal is behind the plane,
+        // the entire box is definitively behind the plane.
+        if (distance < 0.0f) 
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// https://www.cosmiclearn.com/opengl/culling.php
+Frustum::Frustum(const glm::mat4& mvp)
+{
+    planes[0].normal.x = mvp[0][3] + mvp[0][0];
+    planes[0].normal.y = mvp[1][3] + mvp[1][0];
+    planes[0].normal.z = mvp[2][3] + mvp[2][0];
+    planes[0].distance = mvp[3][3] + mvp[3][0];
+
+    // Right Plane: row 3 - row 0
+    planes[1].normal.x = mvp[0][3] - mvp[0][0];
+    planes[1].normal.y = mvp[1][3] - mvp[1][0];
+    planes[1].normal.z = mvp[2][3] - mvp[2][0];
+    planes[1].distance = mvp[3][3] - mvp[3][0];
+
+    // Bottom Plane: row 3 + row 1
+    planes[2].normal.x = mvp[0][3] + mvp[0][1];
+    planes[2].normal.y = mvp[1][3] + mvp[1][1];
+    planes[2].normal.z = mvp[2][3] + mvp[2][1];
+    planes[2].distance = mvp[3][3] + mvp[3][1];
+
+    // Top Plane: row 3 - row 1
+    planes[3].normal.x = mvp[0][3] - mvp[0][1];
+    planes[3].normal.y = mvp[1][3] - mvp[1][1];
+    planes[3].normal.z = mvp[2][3] - mvp[2][1];
+    planes[3].distance = mvp[3][3] - mvp[3][1];
+
+    // Near Plane: row 3 + row 2
+    planes[4].normal.x = mvp[0][3] + mvp[0][2];
+    planes[4].normal.y = mvp[1][3] + mvp[1][2];
+    planes[4].normal.z = mvp[2][3] + mvp[2][2];
+    planes[4].distance = mvp[3][3] + mvp[3][2];
+
+    // Far Plane: row 3 - row 2
+    planes[5].normal.x = mvp[0][3] - mvp[0][2];
+    planes[5].normal.y = mvp[1][3] - mvp[1][2];
+    planes[5].normal.z = mvp[2][3] - mvp[2][2];
+    planes[5].distance = mvp[3][3] - mvp[3][2];
+
+    // Normalize all planes for accurate distance calculations
+    for (size_t i = 0; i < planes.size(); ++i)
+    {
+        planes[i].normalize();
     }
 }

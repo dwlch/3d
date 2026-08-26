@@ -2,15 +2,20 @@
 
 #include <glad.h>   // ID and mode type.
 #include <string>   // load vert and frag as string.
+#include <iostream>
 
-#define SHADER_PATH "./assets/shaders/"
+#include "defines.hpp"
 
-class Shader
+struct Shader
 {
-    public:
-        GLuint ID;
-        GLenum mode;
-        Shader(GLenum mode, std::string vert_file, std::string frag_file);
-    private:
-        void compile_errors(unsigned int shader, const char* type);
+    GLuint ID;
+    GLenum mode;
+    Shader(GLenum mode, std::string vert_file, std::string frag_file);
+    void compile_errors(unsigned int shader, const char* type);
+
+    ~Shader()
+    {
+        glDeleteProgram(this->ID);
+        std::cout << "Shader with ID " << ID << " deleted!\n";
+    }
 };

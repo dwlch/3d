@@ -14,9 +14,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION  // stb image write for tinygltf.
 #include <tiny_gltf.h>                  // actually include the file.
 
-#define MODELS_PATH     "./assets/models/"
-#define TEXTURES_PATH   "./assets/textures/"
-#define ERROR_PNG       "error.png"
+
 
 // link vertex attributes such as position, normals, and texcoords to VBO.
 void link_attrib(GLuint VBO, GLuint layout, GLuint size, GLenum type, GLsizeiptr stride, void *offset)
@@ -84,109 +82,102 @@ glm::mat4 get_node_matrix(Node *node)
 	return node_matrix;
 }
 
-void glTF::draw_node(Node node, GLenum mode, glm::mat4 transform, Shader shader)
+void glTF::draw_node(Node node, GLenum mode, glm::mat4 transform, int shader, Frustum frustum, int &render_count)
 {
-    // draw mesh of node.
-    if (node.mesh_primitives.size())
+    // if AABB of the node is within the camera frustum OR it's a shadow/skybox/(and rn, player/npc): draw. otherwise skip.
+    if (frustum.is_inside(node.min, node.max) || shader == 6 || shader == 18 || shader == 12)
     {
-        // node matrix combined with model transform.
-        glm::mat4 node_transform = transform * get_node_matrix(&node);
-
-        // loop through each mesh in the node (usually just one atm).
-        for (MeshPrimitive &mesh : node.mesh_primitives)
+        // draw mesh of node.
+        if (node.mesh_primitives.size())
         {
-            // very hacky fix rn to make triggers not cast shadows -- fix later.
-                // if (!(mesh.type == 1 && shader.ID == 6)) // ID 6 is shadowmap.
-                // {
-                // if (mesh.index_count > 0 && node.type != Node::Type::NPC)
+            // node matrix combined with model transform.
+            glm::mat4 node_transform = transform * get_node_matrix(&node);
+            
+            // loop through each mesh in the node (usually just one atm).
+            for (MeshPrimitive &mesh : node.mesh_primitives)
+            {
                 if (mesh.index_count > 0)
                 {
-                    // if (mesh.is_trigger)
-                    // {
-                    //     shader.mode = GL_LINE;
-                    // }
                     // bind the VAO with the vertexes from the mesh.
                     glBindVertexArray(mesh.VAO);    
-                    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "mvp"), 1, GL_FALSE, glm::value_ptr(node_transform));
+                    glUniformMatrix4fv(glGetUniformLocation(shader, "mvp"), 1, GL_FALSE, glm::value_ptr(node_transform));
 
                     // if mesh has a material/texture attached to it.
                     if (mesh.material_index > -1)
                     {
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, materials[mesh.material_index].texture_ID);
-                        glUniform1i(glGetUniformLocation(shader.ID, "tex0"), 0);
+                        glUniform1i(glGetUniformLocation(shader, "tex0"), 0);
                     }
 
                     // maybe rather than shader.mode, set when loading trigger vs mesh?
                     // set polygon mode and then draw elements.
-                    glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
-
-                    // switch (mesh.type)
-                    // {
-                    // case 0:
-                    //     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                    //     break;
-                    // case 1:
-                    //     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                    //     break;
-                    
-                    // default:
-                    //     break;
-                    // }
-
-
-
-                    glLineWidth(1.0f);
+                    // glPolygonMode(GL_FRONT_AND_BACK, shader.mode);
+                    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
                     glDrawElements(mode, mesh.index_buffer.size() * sizeof(mesh.index_buffer[0]), GL_UNSIGNED_INT, 0);
 
                     // unbind vertex array and texture.
                     glBindTexture(GL_TEXTURE_2D, 0);
                     glBindVertexArray(0);
+
+                    ++render_count;
                 }
-            // }
+            }
         }
     }
-
+    
     for (auto &child : node.children)
     {
-        draw_node(*child, mode, transform, shader);
+        draw_node(*child, mode, transform, shader, frustum, render_count);
     }
 }
 
 // draw model by drawing each mesh contained within the model.
-void glTF::draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, Camera camera, glm::vec3 colour)
+void glTF::draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, int shader, Camera camera, glm::vec3 colour)
 {
+    int render_count    = 0;
+    Frustum frustum     = Frustum(camera.mvp);
     glm::mat4 transform = translate(glm::mat4(1.0f), position) * glm::mat4_cast(rotation) * glm::scale(glm::mat4(1.0f), scale);
 
     // per-model uniforms.
-    glUseProgram(shader.ID);
-    glUniform1f(glGetUniformLocation(shader.ID, "camera_distance"), camera.distance_offset);
-    glUniform1fv(glGetUniformLocation(shader.ID, "cascade_bounds"), NUM_CASCADES, reinterpret_cast<GLfloat*>(camera.cascade_bounds.data()));
-    glUniform3fv(glGetUniformLocation(shader.ID, "albedo"), 1, glm::value_ptr(colour));
-    glUniform3fv(glGetUniformLocation(shader.ID, "light_pos"), 1, glm::value_ptr(camera.light_pos));
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
-    glUniformMatrix4fv(glGetUniformLocation(shader.ID, "light"), NUM_CASCADES, GL_FALSE, reinterpret_cast<GLfloat*>(camera.cascade_proj.data()));
+    glUseProgram(shader);
+    glUniform1f(glGetUniformLocation(shader, "camera_distance"), camera.distance_offset);
+    glUniform1fv(glGetUniformLocation(shader, "cascade_bounds"), NUM_CASCADES, reinterpret_cast<GLfloat*>(camera.cascade_bounds.data()));
+    glUniform3fv(glGetUniformLocation(shader, "albedo"), 1, glm::value_ptr(colour));
+    glUniform3fv(glGetUniformLocation(shader, "light_pos"), 1, glm::value_ptr(camera.light_pos));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, glm::value_ptr(camera.mvp));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "light"), NUM_CASCADES, GL_FALSE, reinterpret_cast<GLfloat*>(camera.cascade_proj.data()));
+    glLineWidth(1.0f);
     
     for (int i = 0; i < NUM_CASCADES; ++i)
     { 
         // bind from texture1 onwards. texture0 is for mesh textures atm.
         glActiveTexture(GL_TEXTURE1 + i);
         glBindTexture(GL_TEXTURE_2D, camera.depth_maps[i]);
-        glUniform1i(glGetUniformLocation(shader.ID, std::string("shadow_map[" + std::to_string(i) + "]").c_str()), i + 1);
+        glUniform1i(glGetUniformLocation(shader, std::string("shadow_map[" + std::to_string(i) + "]").c_str()), i + 1);
     }
 
     for (auto skin : skins)
     {
         // glUniformMatrix4fv(glGetUniformLocation(shader.ID, "joint_matrices"), MAX_JOINTS, GL_FALSE, glm::value_ptr(skin.joint_matrix[0]));
-        glUniformMatrix4fv(glGetUniformLocation(shader.ID, "joint_matrices"), MAX_JOINTS, GL_FALSE, reinterpret_cast<GLfloat*>(skin.joint_matrix.data()));
+        glUniformMatrix4fv(glGetUniformLocation(shader, "joint_matrices"), MAX_JOINTS, GL_FALSE, reinterpret_cast<GLfloat*>(skin.joint_matrix.data()));
     }
 
     // loop through all nodes in the model.
     for (auto &node : nodes)
     {
-        draw_node(*node, GL_TRIANGLES, transform, shader);
+        draw_node(*node, GL_TRIANGLES, transform, shader, frustum, render_count);
     }
+
+    if (shader != 6 && shader != 18 && shader != 12)
+    {
+        // std::cout << render_count << "\n";
+    }
+    
 }
+
+
+
 
 template <typename T> T glTF::get_node_extras(const tinygltf::Value *extras, std::string property_name)
 {
@@ -263,8 +254,6 @@ void glTF::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, N
         }
     }
 
-    
-
     // load mesh from node if available.
     if (input_node.mesh > -1)
     {
@@ -284,6 +273,7 @@ void glTF::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, N
             int normal_stride       = 0;
             int texcoord_stride     = 0;
             int colours_stride      = 0;
+            int colours_stride2     = 0;
             int joints_stride       = 0;
             int weights_stride      = 0;
 
@@ -292,6 +282,7 @@ void glTF::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, N
             const auto normals_buffer       = get_buffer<float> (input, gltf_primitive, "NORMAL",       TINYGLTF_TYPE_VEC3, normal_stride);
             const auto texcoords_buffer     = get_buffer<float> (input, gltf_primitive, "TEXCOORD_0",   TINYGLTF_TYPE_VEC2, texcoord_stride);
             const auto colours_buffer       = get_buffer<float> (input, gltf_primitive, "COLOR_0",      TINYGLTF_TYPE_VEC4, colours_stride);
+            const auto colours_buffer2      = get_buffer<float> (input, gltf_primitive, "COLOR_1",      TINYGLTF_TYPE_VEC4, colours_stride2);
             const auto joint_indices_buffer = get_buffer<void>  (input, gltf_primitive, "JOINTS_0",     TINYGLTF_TYPE_VEC4, joints_stride);
             const auto joint_weights_buffer = get_buffer<float> (input, gltf_primitive, "WEIGHTS_0",    TINYGLTF_TYPE_VEC4, weights_stride);
 
@@ -351,9 +342,10 @@ void glTF::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, N
                 vertex_buffer.push_back(vertex);
                 this_mesh.vertex_buffer.push_back(vertex);
 
+                glm::vec3 collider_vertex = glm::vec3(get_node_matrix(node) * glm::vec4(vertex.position, 1.0f));
+
                 // for collider, apply mvp to vertex position exactly like in shader.
-                node->collision_vertices.push_back(glm::vec3(get_node_matrix(node) * glm::vec4(vertex.position, 1.0f)));
-                // this_mesh.collision_vertices.push_back(glm::vec3(get_node_matrix(node) * glm::vec4(vertex.position, 1.0f)));
+                node->collision_vertices.push_back(collider_vertex);
             }
 
             // indices.
@@ -399,10 +391,32 @@ void glTF::load_node(const tinygltf::Node &input_node, tinygltf::Model &input, N
             }
 
             // finally push the loaded primitive into the mesh's primitive vector.
-            this_mesh.first_index      = first_index;
-            this_mesh.index_count      = static_cast<uint32_t>(acc.count);
-            this_mesh.material_index   = gltf_primitive.material; // this is the id of the texture.
+            this_mesh.first_index       = first_index;
+            this_mesh.index_count       = static_cast<uint32_t>(acc.count);
+            this_mesh.material_index    = gltf_primitive.material; // this is the id of the texture.
+            
             node->mesh_primitives.push_back(this_mesh);
+
+
+            // auto xExtremes  = std::minmax_element(node->collision_vertices.begin(), node->collision_vertices.end(), [](const glm::vec3& lhs, const glm::vec3& rhs) { return lhs.x < rhs.x; });
+            // auto yExtremes  = std::minmax_element(node->collision_vertices.begin(), node->collision_vertices.end(), [](const glm::vec3& lhs, const glm::vec3& rhs) { return lhs.y < rhs.y; });
+            // auto zExtremes  = std::minmax_element(node->collision_vertices.begin(), node->collision_vertices.end(), [](const glm::vec3& lhs, const glm::vec3& rhs) { return lhs.z < rhs.z; });
+
+            // node->min       = glm::vec3(xExtremes.first->x,     yExtremes.first->y,     zExtremes.first->z);
+            // node->max       = glm::vec3(xExtremes.second->x,    yExtremes.second->y,    zExtremes.second->z);
+
+            glm::vec3 min_point(std::numeric_limits<float>::max());
+            glm::vec3 max_point(std::numeric_limits<float>::lowest());
+
+            for (const glm::vec3& vertex : node->collision_vertices)
+            {
+                min_point = glm::min(min_point, vertex);
+                max_point = glm::max(max_point, vertex);
+            }
+
+            node->min = min_point;
+            node->max = max_point;
+
         }
     }
 
@@ -444,7 +458,7 @@ void glTF::load_material(tinygltf::Model &input)
         GLenum format;
         GLenum type;
         tinygltf::Image texture = input.images[input.textures[i].source];
-        std::cout << "texture: " << texture.name << "\n";
+        // std::cout << "texture: " << texture.name << "\n";
 
         // generate texture using ID.
         glGenTextures(1, &material.texture_ID);
@@ -546,7 +560,7 @@ void glTF::load_skins(tinygltf::Model &input)
             tinygltf::Skin gltf_skin    = input.skins[i];
             skins[i].skeleton_root      = node_from_index(gltf_skin.skeleton);
             skins[i].name               = gltf_skin.name;
-            std::cout << "skin: " << skins[i].name << " (" << gltf_skin.joints.size() << " joints)\n";
+            // std::cout << "skin: " << skins[i].name << " (" << gltf_skin.joints.size() << " joints)\n";
 
             // find nodes that are joints.
             // "The order of joints is defined in the skin.joints array and it must match the order of inverseBindMatrices data."
@@ -584,7 +598,7 @@ void glTF::load_skins(tinygltf::Model &input)
     {
         // gltf is not skinned, so set skin vector to have 1 member.
         skins.resize(1);
-        std::cout << "No skin, loaded empty joints.\n";
+        // std::cout << "No skin, loaded empty joints.\n";
     }
 }
 
@@ -603,7 +617,7 @@ void glTF::load_animations(tinygltf::Model &input)
         tinygltf::Animation gltf_animation  = input.animations[i];
         animations[i].name                  = gltf_animation.name;
 
-        std::cout << "animation: " << animations[i].name <<  "\n";
+        // std::cout << "animation: " << animations[i].name <<  "\n";
 
         animations[i].samplers.resize(gltf_animation.samplers.size());
         for (size_t j = 0; j < gltf_animation.samplers.size(); ++j)

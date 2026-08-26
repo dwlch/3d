@@ -19,7 +19,7 @@ struct Circle
     std::array<glm::mat4, MAX_JOINTS> joint_matrix;
 
     Circle(float radius);
-    void draw(glm::vec3 position, Shader shader, Camera camera, glm::vec3 colour);
+    void draw(glm::vec3 position, int shader, Camera camera, glm::vec3 colour);
 };
 
 // basically a quad that draws the scene w/ post-processing added.
@@ -39,7 +39,7 @@ struct ScreenTexture
     bool bloom;
 
     ScreenTexture();
-    void draw(Shader &screen_shader, Shader &blur_shader);
+    void draw(int screen_shader, int blur_shader);
 };
 
 // drawing 2d text to screen from texture.
@@ -54,10 +54,8 @@ struct Image2D
     int height;
     int component;
 
-    Shader shader = Shader(GL_FILL, "quad.vert",  "quad.frag");
-
     Image2D(std::string filename);
-    void draw(float x, float y, float scale);
+    void draw(float x, float y, float scale, int shader);
 };
 
 struct Text
@@ -74,10 +72,8 @@ struct Text
 
     float scale;
 
-    // Shader shader = Shader(GL_FILL, "quad.vert",  "quad.frag");
-
     Text(std::string font, float scale);
-    void draw(std::string content, float at_x, float at_y, Shader shader);
+    void draw(std::string content, float at_x, float at_y, int shader);
 };
 
 struct Skybox
@@ -97,5 +93,5 @@ struct Skybox
 
     Skybox() {}; // default constructor.
     Skybox(std::string filename);
-    void draw(glm::vec3 position, Shader shader, Camera camera);
+    void draw(glm::vec3 position, int shader, Camera camera);
 };

@@ -13,7 +13,7 @@ struct Textbox
 {
     std::string content;
     Text text = Text(FONT_MAIN, 48.0f);
-    void draw(float x, float y, Shader shader);
+    void draw(float x, float y, int shader);
 };
 
 struct Npc
@@ -34,5 +34,5 @@ struct Npc
 
     Npc(std::string model_name, glm::vec3 position, glm::quat rotation, std::string display_name);
     void update(float dt);
-    void draw(Shader mesh_shader, Shader line_shader, Camera camera, bool draw_collider);
+    void draw(int mesh_shader, int line_shader, Camera camera, bool draw_collider);
 };

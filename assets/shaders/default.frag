@@ -124,7 +124,9 @@ void main()
     
     // get the ambient and diffuse terms.
     vec3 emission           = texture(tex0, frag_texcoord).rgb * frag_color * albedo;
+    // vec3 emission = frag_color;
     vec3 diffuse            = texture(tex0, frag_texcoord).rgb * intensity * light_col;
+    // vec3 diffuse = frag_color;
     
     // fog calculation using depth buffer.
     // get fog depth according to steepness of gradient and distance offset.

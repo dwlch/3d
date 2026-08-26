@@ -29,14 +29,20 @@ struct Win32Audio
 
     float volume = 1.0f;
 
+    float* samples;
+    size_t sample_count;        // number of samples to write.
+    size_t prev_sample_count_context;   // samples since last tick.
+
     // Win32Audio() {};
     // Win32Audio(size_t sample_rate, size_t channel_count, DWORD channel_mask);
-    void cleanup();
 
+    ~Win32Audio();
+    void start_context(float dt);
+    void release();
 };
 
+// ideally would like this to just be part of the win32audio struct somehow...
 void Win32AudioStart(Win32Audio* audio, size_t sample_rate, size_t channel_count, DWORD channel_mask);
-// void Win32AudioStop(Win32Audio* audio);
 
 struct Win32AudioWriteContext
 {

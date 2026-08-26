@@ -56,17 +56,21 @@ struct Node
     int32_t                     skin = -1;
     std::vector<Node *>         children;
     std::vector<MeshPrimitive>  mesh_primitives;
-    std::vector<glm::vec3>      collision_vertices;  // stores collision data of mesh.
+    std::vector<glm::vec3>      collision_vertices; // stores collision data of mesh.
+    std::vector<glm::vec3>      bounding_box;       // AABB of the mesh.
 
-    glm::vec3                   translation{};
+    /*
+    i might need to make like a bounding box before the frustum test, bcos that might be expensive to do every frame?
+    can just store it in the node and calculate it when the node is loaded.
+    */
+
     glm::quat                   rotation{};
+    glm::vec3                   translation{};
     glm::vec3                   scale   = glm::vec3(1.0f);
+    glm::vec3                   min     = glm::vec3(0.0f);
+    glm::vec3                   max     = glm::vec3(1.0f);
     glm::mat4                   matrix  = glm::mat4(1.0f);
     glm::mat4                   get_local_matrix();
-
-
-    // maybe the solution is to load the extras into the node itself?
-    // that kinda makes sense.
 };
 
 // each armature is a collection of nodes.
@@ -115,15 +119,16 @@ struct glTF
     std::vector<Material> materials;    // materials (colour, texture, can add more stuff like normals).
 
     glTF() {};
+    virtual ~glTF() {};
     Node *find_node(Node *parent, uint32_t index);
     Node *node_from_index(uint32_t index);
     void bind_node(Node *node);
-    void draw_node(Node node, GLenum mode, glm::mat4 transform, Shader shader);
-    void draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, Shader shader, Camera camera, glm::vec3 colour);
+    void draw_node(Node node, GLenum mode, glm::mat4 transform, int shader, Frustum frustum, int &render_count);
+    void draw(glm::vec3 position, glm::quat rotation, glm::vec3 scale, int shader, Camera camera, glm::vec3 colour);
     void load_material(tinygltf::Model &input);
     void load_node(const tinygltf::Node &input_node, tinygltf::Model &input, Node *parent, uint32_t node_index, std::vector<uint32_t> &index_buffer, std::vector<Vertex> &vertex_buffer);
     void load_from_file(std::string filename);
-    
+
     // animation.
     std::vector<Skin>       skins;      // armature per mesh? i think that's how it works.
     std::vector<Animation>  animations; // each animation accessed by the index.
@@ -145,7 +150,8 @@ struct glTF
 // atm this is just an alias for the parent struct -- doesn't really do anything rn except be a nicer name.
 struct Model : public glTF
 {
-    Model() {}
+    Model() {};
+    ~Model() override {};
     void get_extras(const tinygltf::Node *in_node, Node *out_node) override {};
 };
 

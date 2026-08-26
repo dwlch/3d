@@ -1,13 +1,22 @@
 #pragma once
 
 #define WINDOW_WIDTH        1200    // global window width.
-#define WINDOW_HEIGHT       960    // global window height.
-#define SHADER_COUNT        8       // total levels.
+#define WINDOW_HEIGHT       960     // global window height.
+#define SHADER_COUNT        8       // total shaders.
 #define NUM_CASCADES        3       // number of shadowmap cascades.
-#define SHADOWMAP_SIZE      4096    // resolution of the shadowmap texture. 2048. 4096.
-#define SAMPLE_RATE         48000
+#define SHADOWMAP_SIZE      2024    // resolution of the shadowmap texture. 2048. 4096.
+#define SAMPLE_RATE         48000   // default sample rate of 48,000Hz
 
+// paths to assets.
+#define MODELS_PATH         "./assets/models/"
+#define TEXTURES_PATH       "./assets/textures/"
+#define SOUNDS_PATH         "./assets/sounds/"
+#define SHADER_PATH         "./assets/shaders/"
+#define LEVELS_PATH         "./assets/models/levels/"
+
+// paths to default textures.
 #define FONT_MAIN           "FragmentMono-Regular.png"
+#define ERROR_PNG           "error.png"
 
 // shaders.
 #define SHADER_FRAMEBUFFER  0
@@ -18,4 +27,3 @@
 #define SHADER_SKYBOX       5
 #define SHADER_BLUR         6
 #define SHADER_TEXT         7
-

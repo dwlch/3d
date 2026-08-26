@@ -6,8 +6,9 @@
 #include "glm/gtx/quaternion.hpp"
 #include "glm/glm.hpp"
 
-#include "draw.hpp"
+// internal
 #include "utility.hpp"
+#include "draw.hpp"
 
 #define GJK_MAX_ITERATIONS 128                  // limit of GJK iterations.
 #define EPA_MAX_ITERATIONS 255                  // limit of EPA iterations.
@@ -21,7 +22,6 @@ struct Collision
     glm::vec3 normal;   // angle of resolved collision.
     float depth;        // depth of collision response.
     bool collided;      // if it is actually a collision or not.
-    bool is_trigger;    //
 };
 
 // store faces inside the polytope.
@@ -59,39 +59,60 @@ struct Polytope
 // abstract parent collider.
 struct Collider
 {
-    bool is_trigger;
-    glm::vec3 colour;
-    int target_level    = 0;
-    glm::vec3 spawn     = glm::vec3(0.0f);  // spawn point for level changes.
-
+    virtual ~Collider() {};
     virtual glm::vec3 furthest_point(glm::vec3 direction) const = 0;
-    // virtual void draw(const Shader &shader, const Camera &camera)   = 0;
+    virtual void draw(int shader, const Camera &camera) = 0;
+
+    std::pair<glm::vec3, glm::vec3> AABB;
+    
+    bool is_trigger     = false;
+    int target_level    = 0;
+    glm::vec3 spawn     = glm::vec3(0.0f);
 };
 
 // cylinder collision shape. defined using height, radius, position, and axis.
 struct CylinderCollider : public Collider
 {
-    // glm::vec3 colour = glm::vec3(5.0f);
     glm::vec3 position;
-    // glm::vec3 postion_next_frame;
     glm::vec3 axis;
+    glm::vec3 colour = glm::vec3(5.0f);
     float height;
     float radius;
-    // Circle circle{radius};
-
+    Circle circle{radius};
+    
     // constructors.
-    // CylinderCollider() : position(glm::vec3(0.0f)), axis(glm::vec3(0.0f, 1.0f, 0.0f)), height(0.0f), radius(1.0f), circle(Circle(1.0f)) {}
-    // CylinderCollider(glm::vec3 position, glm::vec3 axis, float height, float radius) : position(position), axis(axis), height(height), radius(radius), circle(Circle(radius)) {}
+    CylinderCollider() : position(glm::vec3(0.0f)), axis(glm::vec3(0.0f, 1.0f, 0.0f)), height(0.0f), radius(1.0f), circle(Circle(1.0f)) {}
+    CylinderCollider(glm::vec3 position, glm::vec3 axis, float height, float radius) : position(position), axis(axis), height(height), radius(radius), circle(Circle(radius))
+    {
+        // AABB.first      = glm::vec3(position.x - radius, position.y - radius, position.z);
+        // AABB.second     = glm::vec3(position.x + radius, position.y + radius, position.z + height);
 
-    CylinderCollider() : position(glm::vec3(0.0f)), axis(glm::vec3(0.0f, 1.0f, 0.0f)), height(0.0f), radius(1.0f) {}
-    CylinderCollider(glm::vec3 position, glm::vec3 axis, float height, float radius) : position(position), axis(axis), height(height), radius(radius) {}
+        // glm::vec3 half_size{ radius, height,  radius };
+        // AABB.first      = position - half_size;
+        // AABB.second     = position + half_size;
 
-    // // draws 2 circles, one at base of collider one at the top, using radius.
-    // void draw(const Shader &shader, const Camera &camera) override
-    // {
-    //     circle.draw(position, shader, camera, colour);
-    //     circle.draw(glm::vec3(position.x, position.y + height, position.z), shader, camera, colour);
-    // }
+        AABB.first      = position + glm::vec3(-radius, -height, -radius);
+        AABB.second     = position + glm::vec3( radius,  height,  radius);
+    }
+    ~CylinderCollider() override {};
+
+    void move(const glm::vec3& new_position)
+    {
+        position        = new_position;
+        // glm::vec3 half_size{ radius, height,  radius };
+        // AABB.first      = position - half_size;
+        // AABB.second     = position + half_size;
+
+        AABB.first      = new_position + glm::vec3(-radius, -height, -radius);
+        AABB.second     = new_position + glm::vec3( radius,  height,  radius);
+    }
+
+    // draws 2 circles, one at base of collider one at the top, using radius.
+    void draw(int shader, const Camera &camera) override
+    {
+        circle.draw(position, shader, camera, colour);
+        circle.draw(glm::vec3(position.x, position.y + height, position.z), shader, camera, colour);
+    }
 
     // support mapping from http://www.cs.kent.edu/~ruttan/GameEngines/lectures/gjk1.pdf
     glm::vec3 furthest_point(glm::vec3 direction) const override
@@ -113,55 +134,21 @@ struct CylinderCollider : public Collider
     }
 };
 
-// // cylinder collision shape. defined using height, radius, position, and axis.
-// struct RayCollider : public Collider
-// {
-//     glm::vec3 colour = glm::vec3(0.0f);
-//     glm::vec3 point_a;
-//     glm::vec3 point_b;
-
-
-//     // constructors.
-//     RayCollider() : point_a(glm::vec3(0.0f)), point_b(glm::vec3(1.0f)) {}
-//     RayCollider(glm::vec3 point_a, glm::vec3 point_b) : point_a(point_a), point_b(point_b) {}
-
-//     // draws 2 circles, one at base of collider one at the top, using radius.
-//     void draw(const Shader &shader, const Camera &camera) override
-//     {
-
-//     }
-
-//     // support mapping from http://www.cs.kent.edu/~ruttan/GameEngines/lectures/gjk1.pdf
-//     glm::vec3 furthest_point(glm::vec3 direction) const override
-//     {   
-
-//         glm::vec3 point     = glm::vec3(0.0f);
-
-//         return point;
-//     }
-// };
-
 // arbitrary convex mesh collision shape. defined using a vector of vertices.
 // not sure if this ever requires indices to get correct order or doesn't matter.
 struct MeshCollider : public Collider
 {
-    glm::vec3 colour = glm::vec3(0.9f, 0.5f, 0.3f);
-    std::vector<glm::vec3> vertices;
-    // bool is_trigger;
-    // MeshPrimitive mesh;
+    std::vector<glm::vec3> vertices; // stores collision shape.
 
     // default constructor.
-    MeshCollider(std::vector<glm::vec3> &vertices) : vertices(vertices) 
+    MeshCollider(std::vector<glm::vec3> &vertices, const glm::vec3 &min, const glm::vec3 &max) : vertices(vertices)
     {
-        // bind_buffers(mesh.VAO, mesh.VBO, mesh.EBO, vertices, )
+        AABB.first  = min;
+        AABB.second = max;
     }
+    ~MeshCollider() override {};
 
-    // // draw mesh wrapper, simply draws the mesh used for mesh collider input.
-    // void draw(const Shader &shader, const Camera &camera) override
-    // {
-
-    //     // mesh.draw(GL_TRIANGLES, glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader, colour);
-    // }
+    void draw(int shader, const Camera &camera) override {};
 
     // loop through each vertex position,
     // get the vertex in the mesh that is furthest in direction.
@@ -184,4 +171,7 @@ struct MeshCollider : public Collider
 };
 
 // call this function to query a collision between any two collider shapes.
-Collision is_collision(const Collider *a, const Collider *b);
+Collision get_collision(const Collider *a, const Collider *b);
+
+// returns true if the AABB of both colliders intersect.
+bool AABB_check(const Collider *a, const Collider *b);

@@ -43,7 +43,7 @@ enum Mode
 };
 
 Mode mode       = Mode::GAME;
-bool debug      = false;
+bool debug      = true;
 bool finished   = false;
 
 // basically this just stores everything that is loaded while the game is running.
@@ -87,10 +87,11 @@ struct Time
     };
 };
 
-void update(Player &player, Camera &camera, std::shared_ptr<Level> level, Skybox &skybox, Textbox &textbox, Win32Audio &audio, Sound &bgm, Time &time)
+void update(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybox &skybox, Textbox &textbox, Win32Audio &audio, Sound &bgm, Time &time)
 {
+    // Sleep(5 * 17);
     time.get_time();
-    float delta_time = time.dt;
+    float delta_time = (float)time.dt;
 
     // update game logic at the rate specified by delta time (defaults to the monitors refresh rate).
     for (; time.accumulator >= time.dt; time.accumulator -= time.dt)
@@ -107,30 +108,37 @@ void update(Player &player, Camera &camera, std::shared_ptr<Level> level, Skybox
             if (distance < 5.0f)
             {
                 level->npcs[i].target_animation = 1;
-                textbox.content = level->npcs[i].dialogue;
+                textbox.content                 = level->npcs[i].dialogue;
                 count++;
             }
 
             if (count == 0)
             {
                 level->npcs[i].target_animation = 0;
-                textbox.content = {};
+                textbox.content                 = {};
             }
             level->npcs[i].update(delta_time);
         }
 
+
         // audio.
         Win32AudioWriteContext write_context(&audio, delta_time);
+
+
+
         bgm.play(write_context);
         player.sound.play(write_context);
+
+
         write_context.release(&audio);
+
         
         update_inputs();
         // time.duration += time.dt;
     }
 }
 
-void draw(Player &player, Camera &camera, std::shared_ptr<Level> level, Skybox &skybox, Textbox &textbox, ScreenTexture screen, std::array<Shader, SHADER_COUNT> shader)
+void draw(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybox &skybox, Textbox &textbox, ScreenTexture screen, std::array<Shader, SHADER_COUNT> &shader)
 {
     // draw to shadowmaps.
     glViewport(0, 0, SHADOWMAP_SIZE, SHADOWMAP_SIZE);
@@ -150,11 +158,11 @@ void draw(Player &player, Camera &camera, std::shared_ptr<Level> level, Skybox &
         glClear(GL_DEPTH_BUFFER_BIT);
 
         // render geometry to the current cascade.
-        player.draw(shader[SHADER_SHADOWMAP], shader[SHADER_SHADOWMAP], camera, false);
-        level->draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_SHADOWMAP], camera, glm::vec3(1.0f));
+        player.draw(shader[SHADER_SHADOWMAP].ID, shader[SHADER_SHADOWMAP].ID, camera, false);
+        level->draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_SHADOWMAP].ID, camera, glm::vec3(1.0f));
         for (size_t i = 0; i < level->npcs.size(); ++i)
         {
-            level->npcs[i].draw(shader[SHADER_SHADOWMAP], shader[SHADER_SHADOWMAP], camera, false);
+            level->npcs[i].draw(shader[SHADER_SHADOWMAP].ID, shader[SHADER_SHADOWMAP].ID, camera, false);
         }
     }
 
@@ -165,19 +173,19 @@ void draw(Player &player, Camera &camera, std::shared_ptr<Level> level, Skybox &
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     // draw scene to post-process framebuffer.
-    player.draw(shader[SHADER_CEL], shader[SHADER_LINE], camera, debug);
-    level->draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_DEFAULT], camera, glm::vec3(1.0f));
+    player.draw(shader[SHADER_CEL].ID, shader[SHADER_LINE].ID, camera, debug);
+    level->draw(glm::vec3(0.0f), glm::quat(glm::vec3(0.0f)), glm::vec3(1.0f), shader[SHADER_DEFAULT].ID, camera, glm::vec3(1.0f));
     for (size_t i = 0; i < level->npcs.size(); ++i)
     {
-        level->npcs[i].draw(shader[SHADER_CEL], shader[SHADER_LINE], camera, debug);
+        level->npcs[i].draw(shader[SHADER_CEL].ID, shader[SHADER_LINE].ID, camera, debug);
     }
-    skybox.draw(player.position, shader[SHADER_SKYBOX], camera);
+    skybox.draw(player.position, shader[SHADER_SKYBOX].ID, camera);
     
     // finally, draw the screen framebuffer.
-    screen.draw(shader[SHADER_FRAMEBUFFER], shader[SHADER_BLUR]);
+    screen.draw(shader[SHADER_FRAMEBUFFER].ID, shader[SHADER_BLUR].ID);
 
     // draw text/ui stuff after screenbuffer (so it doesn't get effected by the screenbuffer shader).
-    textbox.draw(0.0f, 0.0f, shader[SHADER_TEXT]);
+    textbox.draw(0.0f, 0.0f, shader[SHADER_TEXT].ID);
 }
 
 int main(void)
@@ -214,7 +222,6 @@ int main(void)
     glfwSetMouseButtonCallback(window, mouse_callback);         // mouse button inputs.
     glfwSetCursorPosCallback(window, cursor_callback);          // cursor position.
     glfwSetScrollCallback(window, scroll_callback);             // scroll wheel input.
-    // glfwSetWindowRefreshCallback(window, window_refresh_callback);
     
     gladLoadGL();
     glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);  // define the OpenGL viewport in the window.
@@ -243,6 +250,8 @@ int main(void)
     // could prob organise this a bit better? tho i guess having some kind of 'game' class to create all of these is just redundant fluff.
     Win32Audio audio = {};
     Win32AudioStart(&audio, SAMPLE_RATE, 2, SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT);
+
+    
     Time time(mode->refreshRate);
     Player player;
     Camera camera;
@@ -252,8 +261,11 @@ int main(void)
     Textbox textbox;
 
     // level.
-    std::shared_ptr<Level> level = std::make_shared<Level>();
+    std::unique_ptr<Level> level = std::make_unique<Level>();
     level->load_level(player.current_level, skybox, bgm);
+
+    // random seed -- use system date/time prob.
+    std::srand(std::time(0));
 
     // main loop.
     while (!glfwWindowShouldClose(window))
@@ -264,16 +276,7 @@ int main(void)
         glfwPollEvents();           // poll IO events.
     }
 
-    // loop through all shaders and delete each one.
-    for (size_t i = 0; i < shader.size(); ++i)
-    {
-        glDeleteProgram(shader[i].ID);
-    }
-
-    // unload audio.
-    audio.cleanup();
-    
-	glfwDestroyWindow(window);  // destroy window prior to ending program.
-	glfwTerminate();            // end GLFW.
+	glfwDestroyWindow(window);      // destroy window prior to ending program.
+	glfwTerminate();                // end GLFW.
 	return 0;
 }

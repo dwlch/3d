@@ -3,8 +3,7 @@
 #include <filesystem>
 #include <iostream>
 
-
-#define LEVELS_PATH     "./assets/models/levels/"
+#include "defines.hpp"
 
 // check the extras given for certain values to load into the level.
 void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
@@ -21,7 +20,10 @@ void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
         {
             if (custom_properties.Has("spawn") && custom_properties.Get("spawn").ArrayLen() == 3)
             {
-                MeshCollider *collider  = new MeshCollider(out_node->collision_vertices);
+
+                auto collider = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
+       
+                collider->is_trigger    = true;
                 collider->target_level  = custom_properties.Get("level").GetNumberAsInt();
                 collider->spawn         = glm::vec3(
                     (float)custom_properties.Get("spawn").Get(0).GetNumberAsDouble(),
@@ -29,7 +31,7 @@ void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
                     (float)custom_properties.Get("spawn").Get(2).GetNumberAsDouble()
                 );
 
-                triggers.push_back(std::move(std::unique_ptr<Collider>(collider)));
+                colliders.push_back(std::move(collider));
             }
         }
 
@@ -37,28 +39,31 @@ void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
         {
             if (!custom_properties.Get("nonsolid").Get<bool>())
             {
-                MeshCollider *collider = new MeshCollider(out_node->collision_vertices);
-                colliders.push_back(std::move(std::unique_ptr<Collider>(collider)));
+                
+                colliders.emplace_back(std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max));
             }
         }
     } 
     else // default to mesh collider on anything untagged.
     {
-        MeshCollider *collider = new MeshCollider(out_node->collision_vertices);
-        colliders.push_back(std::move(std::unique_ptr<Collider>(collider)));
+        // std::vector<glm::vec3> temp = {out_node->min, out_node->max};
+        // colliders.emplace_back(std::make_unique<MeshCollider>(temp));
+
+
+        colliders.emplace_back(std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max));
     }
 }
 
 // load a model from a .gltf file (works with both combined and seperate, but not .glb).
 void Level::load_level(int level_index, Skybox &skybox, Sound &bgm)
 {
+    std::string filename = std::string("level_" + std::to_string(level_index) + ".glb");
     tinygltf::Model glTF_input;         // stores .gltf model reference.
     tinygltf::TinyGLTF glTF_context;    // stores ASCII from file.
     std::string error;                  // outputs warning if fails to load properly.
     std::string warning;                // outputs error if any errors.
-    bool loaded             = false;
-    std::string filename    = std::string("level_" + std::to_string(level_index) + ".glb");
-
+    bool loaded;
+    
     if (std::filesystem::path(filename).extension() == ".glb")
     {
         loaded = glTF_context.LoadBinaryFromFile(&glTF_input, &error, &warning, LEVELS_PATH + filename);
@@ -69,6 +74,7 @@ void Level::load_level(int level_index, Skybox &skybox, Sound &bgm)
     }
     else
     {
+        loaded = false;
         std::cout << "Invalid file extension (only accepts .glb and .gltf)\n";
     }
 
@@ -154,5 +160,5 @@ void Level::load_level(int level_index, Skybox &skybox, Sound &bgm)
         }
     }
 
-    std::cout << "LEVEL " << std::to_string(level_index) << " LOADED!" << "\n\n";
+    std::cout << "Level " << std::to_string(level_index) << " loaded." << "\n\n";
 }

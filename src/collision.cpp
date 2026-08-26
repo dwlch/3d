@@ -124,7 +124,7 @@ bool tetrahedron(std::vector<glm::vec3> &simplex, glm::vec3 &direction)
 }
 
 // determine simplex case to query based on the number of points.
-bool do_simplex(std::vector<glm::vec3> &simplex, glm::vec3 &direction)
+bool get_simplex(std::vector<glm::vec3> &simplex, glm::vec3 &direction)
 {   
     switch (simplex.size())
     {
@@ -162,7 +162,7 @@ bool GJK(const Collider *a, const Collider *b, std::vector<glm::vec3> &simplex)
             break;
         }
         simplex.push_back(support);                 // insert new support into simplex.
-        if (do_simplex(simplex, direction))         // returns true if simplex contains the origin in the direction given.
+        if (get_simplex(simplex, direction))         // returns true if simplex contains the origin in the direction given.
         {
             return true;
         } 
@@ -325,9 +325,20 @@ Collision EPA(const Collider *collider_a, const Collider *collider_b, std::vecto
 }
 
 // this function actually does the GJK check + EPA, and returns the values as a Results struct
-Collision is_collision(const Collider *a, const Collider *b)
+Collision get_collision(const Collider *a, const Collider *b)
 {
     Collision collision;            // stores the info from collision test.
+
+    // early exit AABB check
+    if (!AABB_check(&*a, &*b))
+    {
+        collision.collided  = false;
+        collision.depth     = 0.0f;
+        collision.normal    = glm::vec3(0.0f);
+        return collision;
+    }
+
+
     std::vector<glm::vec3> simplex; // simplex constructed in GJK step, iterated on in EPA to get penetration.
     simplex.reserve(4);
 
@@ -339,16 +350,16 @@ Collision is_collision(const Collider *a, const Collider *b)
     else 
     {
         collision.collided   = false;
-    }
-
-    if (a->is_trigger || b->is_trigger)
-    {
-        collision.is_trigger = true;
-    }
-    else
-    {
-        collision.is_trigger = false;
-    }
+    }       
 
     return collision;
 }
+
+bool AABB_check(const Collider *a, const Collider *b)
+{
+    return  (a->AABB.first.x < b->AABB.second.x && a->AABB.second.x > b->AABB.first.x) &&
+            (a->AABB.first.y < b->AABB.second.y && a->AABB.second.y > b->AABB.first.y) &&
+            (a->AABB.first.z < b->AABB.second.z && a->AABB.second.z > b->AABB.first.z);
+}
+
+
