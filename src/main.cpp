@@ -43,7 +43,7 @@ enum Mode
 };
 
 Mode mode       = Mode::GAME;
-bool debug      = true;
+bool debug      = false;
 bool finished   = false;
 
 // basically this just stores everything that is loaded while the game is running.
@@ -97,6 +97,7 @@ void update(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybo
     for (; time.accumulator >= time.dt; time.accumulator -= time.dt)
     {
         // game logic/collisions/movement etc.
+        gamepad_input();
         camera.get_input(player.auto_cam_yaw, delta_time);      // camera input, calculates camera orientation vec3.
         player.update(level, skybox, bgm, camera, delta_time);  // player input and movement, sent a vector of colliders.
         camera.update(player.camera_lookat);                    // update camera matrix using target position.
@@ -105,7 +106,7 @@ void update(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybo
         for (size_t i = 0; i < level->npcs.size(); ++i)
         {
             float distance = glm::length(glm::vec3(player.position.x - level->npcs[i].position.x, player.position.y - level->npcs[i].position.y, player.position.z - level->npcs[i].position.z));
-            if (distance < 5.0f)
+            if (distance < 10.0f)
             {
                 level->npcs[i].target_animation = 1;
                 textbox.content                 = level->npcs[i].dialogue;
@@ -115,11 +116,16 @@ void update(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybo
             if (count == 0)
             {
                 level->npcs[i].target_animation = 0;
-                textbox.content                 = {};
             }
             level->npcs[i].update(delta_time);
         }
 
+        // no nearby npcs, so clear textbox and set position back to 0.
+        if (count == 0)
+        {
+            textbox.content = {};
+            textbox.text.position = 0;
+        }
 
         // audio.
         Win32AudioWriteContext write_context(&audio, delta_time);
@@ -127,8 +133,8 @@ void update(Player &player, Camera &camera, std::unique_ptr<Level> &level, Skybo
 
 
         bgm.play(write_context);
-        player.sound.play(write_context);
-
+        player.jump_sound.play(write_context);
+        player.boosted_jump_sound.play(write_context);
 
         write_context.release(&audio);
 
@@ -222,6 +228,7 @@ int main(void)
     glfwSetMouseButtonCallback(window, mouse_callback);         // mouse button inputs.
     glfwSetCursorPosCallback(window, cursor_callback);          // cursor position.
     glfwSetScrollCallback(window, scroll_callback);             // scroll wheel input.
+    glfwSetJoystickCallback(joystick_callback);                 // gamepad input.
     
     gladLoadGL();
     glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);  // define the OpenGL viewport in the window.
@@ -266,6 +273,7 @@ int main(void)
 
     // random seed -- use system date/time prob.
     std::srand(std::time(0));
+    
 
     // main loop.
     while (!glfwWindowShouldClose(window))

@@ -16,5 +16,6 @@ void main()
         weights.z * joint_matrices[int(joints.z)] +
         weights.w * joint_matrices[int(joints.w)];
 
-    gl_Position = light * mvp * skin * vec4(position, 1.0);
+    vec4 pos    = mvp * skin * vec4(position, 1.0);
+    gl_Position = light * pos;
 }

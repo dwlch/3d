@@ -56,6 +56,9 @@ struct Polytope
     size_t face_count = 0;
 };
 
+
+
+
 // abstract parent collider.
 struct Collider
 {
@@ -63,11 +66,21 @@ struct Collider
     virtual glm::vec3 furthest_point(glm::vec3 direction) const = 0;
     virtual void draw(int shader, const Camera &camera) = 0;
 
-    std::pair<glm::vec3, glm::vec3> AABB;
+    enum Type
+    {
+        SOLID,
+        WARP,
+        BOUNCE
+    };
     
-    bool is_trigger     = false;
+    // bool is_trigger     = false;
+    // int type            = 0;
+
+
+    Type type           = Type::SOLID;
     int target_level    = 0;
     glm::vec3 spawn     = glm::vec3(0.0f);
+    std::pair<glm::vec3, glm::vec3> AABB;
 };
 
 // cylinder collision shape. defined using height, radius, position, and axis.

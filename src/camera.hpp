@@ -42,6 +42,8 @@ struct Camera
     const float SENSITIVITY     = 500.0f;
 
     // variables.
+    float pitch                 = 0.0f;
+    float yaw                   = 0.0f;
     float FOV;                      // initial field of view value.
     float aspect;                   // aspect ratio.
     float distance_offset = 7.0f;   // distance from camera to target.

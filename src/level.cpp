@@ -20,10 +20,8 @@ void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
         {
             if (custom_properties.Has("spawn") && custom_properties.Get("spawn").ArrayLen() == 3)
             {
-
-                auto collider = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
-       
-                collider->is_trigger    = true;
+                auto collider           = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
+                collider->type          = collider->Type::WARP;
                 collider->target_level  = custom_properties.Get("level").GetNumberAsInt();
                 collider->spawn         = glm::vec3(
                     (float)custom_properties.Get("spawn").Get(0).GetNumberAsDouble(),
@@ -35,22 +33,35 @@ void Level::get_extras(const tinygltf::Node *in_node, Node *out_node)
             }
         }
 
+        if (custom_properties.Has("type"))
+        {
+            if (custom_properties.Get("type").GetNumberAsInt() == 1)
+            {
+                auto collider   = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
+                collider->type  = collider->Type::BOUNCE;
+                colliders.push_back(std::move(collider));
+            }
+        }
+        
         if (custom_properties.Has("nonsolid"))
         {
             if (!custom_properties.Get("nonsolid").Get<bool>())
             {
-                
-                colliders.emplace_back(std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max));
+                auto collider   = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
+                collider->type  = collider->Type::SOLID;
+                colliders.push_back(std::move(collider));
             }
         }
-    } 
-    else // default to mesh collider on anything untagged.
+    }
+    // default to mesh collider on anything untagged.
+    else 
     {
         // std::vector<glm::vec3> temp = {out_node->min, out_node->max};
         // colliders.emplace_back(std::make_unique<MeshCollider>(temp));
 
-
-        colliders.emplace_back(std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max));
+        auto collider   = std::make_unique<MeshCollider>(out_node->collision_vertices, out_node->min, out_node->max);
+        collider->type  = collider->Type::SOLID;
+        colliders.push_back(std::move(collider));
     }
 }
 

@@ -70,9 +70,12 @@ struct Text
     int height;
     int component;
 
+    int glyph_size;
+
+    int position = 0;
     float scale;
 
-    Text(std::string font, float scale);
+    Text(std::string font, int glyph_size);
     void draw(std::string content, float at_x, float at_y, int shader);
 };
 

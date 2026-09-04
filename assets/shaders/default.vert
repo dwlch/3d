@@ -15,12 +15,14 @@ uniform mat4 view;                              // view matrix that stores the c
 uniform mat4 light[NUM_CASCADES];               // light matrix from shadow, one for each cascade.
 uniform mat4 joint_matrices[MAX_JOINTS];        // array of joint transformations.
 
+uniform float time;
+
 // out vec3 frag_position;                         // outputs the current position for the Fragment Shader 
 out vec3 frag_normal;                           // outputs normal
 out vec3 frag_color;                            // outputs color
 out vec2 frag_texcoord;                         // outputs texture coordinates
 out vec4 frag_shadowcoords[NUM_CASCADES];       // outputs position respective to light.
-
+float t = 0.0;
 void main()
 {
     mat4 skin = 
@@ -29,8 +31,16 @@ void main()
         weights.z * joint_matrices[int(joints.z)] +
         weights.w * joint_matrices[int(joints.w)];
 
-    vec4 position       = mvp * skin * vec4(vertex_position, 1.0);
-    gl_Position         = view * position;
+    
+    t += 5.0;
+
+
+    // vertex_position.y   += sin(vertex_position.x * 10.0 + t * 0.5) * 0.5;
+
+    vec4 position       = mvp * skin * vec4(vec3(vertex_position), 1.0);
+
+
+
     frag_normal         = normalize(vec3(inverse(transpose(mvp * skin)) * vec4(vertex_normal, 1.0)));
     frag_color          = vertex_color;
     frag_texcoord       = vertex_texcoord;
@@ -41,4 +51,8 @@ void main()
     {
         frag_shadowcoords[i] = light[i] * position;
     }
+
+
+    // position.y          += sin(position.x * position.z * time);
+    gl_Position         = view * position;
 }

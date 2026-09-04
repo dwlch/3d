@@ -60,9 +60,9 @@ void Camera::get_input(float auto_cam, float dt)
 {
     // timing += dt;
     // derive yaw and pitch rotations in radians from input axis.
-    float yaw           = (float)MOUSE_X * SENSITIVITY * dt;
-    float pitch         = (float)MOUSE_Y * SENSITIVITY * dt;
-    distance_offset     = glm::clamp(distance_offset - (float)CAMERA_ZOOM, DISTANCE_MIN, DISTANCE_MAX);
+    yaw             = (float)MOUSE_X * SENSITIVITY * dt;
+    pitch           = (float)MOUSE_Y * SENSITIVITY * dt;
+    distance_offset = glm::clamp(distance_offset - (float)CAMERA_ZOOM, DISTANCE_MIN, DISTANCE_MAX);
 
     // clamp pitch to min and max angle.
     float current_angle = glm::orientedAngle(up, orientation, up);
@@ -84,11 +84,12 @@ void Camera::get_input(float auto_cam, float dt)
     }
     else
     {
-        auto_cam_factor = 0.1f;
+        auto_cam_factor = 0.05f;
     }
 
+    // orientation = glm::rotate(orientation, dt * (yaw + (auto_cam * auto_cam_factor)), up);
     // rotate the camera using yaw and pitch.
-    orientation = glm::rotate(orientation, yaw + (auto_cam * auto_cam_factor), up);
+    orientation = glm::rotate(orientation, yaw, up);
     orientation = glm::rotate(orientation, pitch, glm::cross(orientation, up));
     orientation = glm::normalize(orientation);
 }

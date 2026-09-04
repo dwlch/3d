@@ -6,6 +6,10 @@
 #include <glm/gtc/type_ptr.hpp>         // get type of pointer for shaders.
 #include <stb_image.h>                  // load images (include seperately from tinygltf).
 #include <array>
+#include <random>
+
+#include <sstream>
+#include <string>
 
 #define MODELS_PATH     "./assets/models/"
 #define TEXTURES_PATH   "./assets/textures/"
@@ -430,113 +434,153 @@ void Image2D::draw(float x, float y, float scale, int shader)
 	glBindVertexArray(0);
 }
 
-
-
 float glyph_y_offsets[256]  = { 0.5f };
 float glyph_widths[256]     = { 0.5f };
 
 // After tweaking, save these values to a file
 void tweak_glyphs()
 {
-	// lower down glyhs by some factor
-	for (int i = 0; i < 255; i++)
-    {
-		// default lower-case to half-size spacing
-		if (i >= 'a' && i <= 'z')
-        {
-			glyph_y_offsets[i] = 0.6f;
-		}
-        else if (i >= 'A' && i <= 'Z')
-        {
-			glyph_y_offsets[i] = 0.2f;
-		}
-        else
-        {
-            glyph_y_offsets[i] = 0.5f;
-        }
-	}
+	// // lower down glyhs by some factor
+	// for (int i = 0; i < 255; i++)
+    // {
+	// 	// default lower-case to half-size spacing
+	// 	if (i >= 'a' && i <= 'z')
+    //     {
+	// 		glyph_y_offsets[i] = 0.6f;
+	// 	}
+    //     else if (i >= 'A' && i <= 'Z')
+    //     {
+	// 		glyph_y_offsets[i] = 0.2f;
+	// 	}
+    //     else
+    //     {
+    //         glyph_y_offsets[i] = 0.5f;
+    //     }
+	// }
 
-	glyph_y_offsets['b'] = 0.4f;
-	glyph_y_offsets['d'] = 0.4f;
-	glyph_y_offsets['f'] = 0.4f;
-	glyph_y_offsets['g'] = 0.5f;
-	glyph_y_offsets['h'] = 0.3f;
-	glyph_y_offsets['i'] = 0.5f;
-	glyph_y_offsets['j'] = 0.4f;
-	glyph_y_offsets['k'] = 0.3f;
-	glyph_y_offsets['l'] = 0.3f;
-	glyph_y_offsets['p'] = 0.5f;
-	glyph_y_offsets['q'] = 0.5f;
-	glyph_y_offsets['s'] = 0.4f;
-	glyph_y_offsets['t'] = 0.3f;
-	glyph_y_offsets['!'] = 0.1f;
-    glyph_y_offsets['?'] = 0.1f;
-	glyph_y_offsets[','] = 1.0f;
-    glyph_y_offsets['.'] = 1.0f;
-    glyph_y_offsets['('] = 0.5f;
-    glyph_y_offsets[')'] = 0.5f;
+	// glyph_y_offsets['b'] = 0.4f;
+	// glyph_y_offsets['d'] = 0.4f;
+	// glyph_y_offsets['f'] = 0.4f;
+	// glyph_y_offsets['g'] = 0.5f;
+	// glyph_y_offsets['h'] = 0.3f;
+	// glyph_y_offsets['i'] = 0.5f;
+	// glyph_y_offsets['j'] = 0.4f;
+	// glyph_y_offsets['k'] = 0.3f;
+	// glyph_y_offsets['l'] = 0.3f;
+	// glyph_y_offsets['p'] = 0.5f;
+	// glyph_y_offsets['q'] = 0.5f;
+	// glyph_y_offsets['s'] = 0.4f;
+	// glyph_y_offsets['t'] = 0.3f;
+	// glyph_y_offsets['!'] = 0.1f;
+    // glyph_y_offsets['?'] = 0.1f;
+	// glyph_y_offsets[','] = 1.0f;
+    // glyph_y_offsets['.'] = 1.0f;
+    // glyph_y_offsets['('] = 0.5f;
+    // glyph_y_offsets[')'] = 0.5f;
 
-	// reduce spacing after glyph
-	for (int i = 0; i < 255; i++)
-    {
-		// default lower-case to half-size spacing
-		if (i >= 'a' && i <= 'z')
-        {
-			glyph_widths[i] = 0.5f;
-		}
-        else if (i >= 'A' && i <= 'Z')
-        {
-			glyph_widths[i] = 0.7f;
-		}
-        else
-        {
-			glyph_widths[i] = 0.7f;
-		}
-	}
+	// // reduce spacing after glyph
+	// for (int i = 0; i < 255; i++)
+    // {
+	// 	// default lower-case to half-size spacing
+	// 	if (i >= 'a' && i <= 'z')
+    //     {
+	// 		glyph_widths[i] = 0.5f;
+	// 	}
+    //     else if (i >= 'A' && i <= 'Z')
+    //     {
+	// 		glyph_widths[i] = 0.7f;
+	// 	}
+    //     else
+    //     {
+	// 		glyph_widths[i] = 0.7f;
+	// 	}
+	// }
 
-	glyph_widths[' '] = 0.4f;
-	glyph_widths['!'] = 0.3f;
-	glyph_widths[','] = 0.5f;
-	glyph_widths['A'] = 0.8f;
-	glyph_widths['B'] = 0.6f;
-	glyph_widths['D'] = 0.6f;
-	glyph_widths['F'] = 0.6f;
-	glyph_widths['L'] = 0.8f;
-	glyph_widths['M'] = 1.0f;
-	glyph_widths['N'] = 0.8f;
-	glyph_widths['P'] = 0.6f;
-	glyph_widths['R'] = 0.6f;
-	glyph_widths['S'] = 0.85f;
-	glyph_widths['T'] = 0.9f;
-	glyph_widths['U'] = 0.8f;
-	glyph_widths['V'] = 0.8f;
-	glyph_widths['W'] = 1.0f;
-	glyph_widths['e'] = 0.45f;
-	glyph_widths['f'] = 0.4f;
-	glyph_widths['g'] = 0.45f;
-	glyph_widths['h'] = 0.45f;
-	glyph_widths['i'] = 0.25f;
-	glyph_widths['j'] = 0.3f;
-	glyph_widths['k'] = 0.45f;
-	glyph_widths['l'] = 0.25f;
-	glyph_widths['p'] = 0.45f;
-	glyph_widths['q'] = 0.45f;
-	glyph_widths['r'] = 0.45f;
-	glyph_widths['t'] = 0.4f;
-	glyph_widths['u'] = 0.45f;
-	glyph_widths['v'] = 0.4f;
-	glyph_widths['w'] = 0.7f;
-	glyph_widths['y'] = 0.4f;
-    glyph_widths['.'] = 0.5f;
-    glyph_widths['('] = 0.5f;
-    glyph_widths[')'] = 0.5f;
-    glyph_widths['-'] = 0.8f;
+    // 
+    // float glyph_size = 32.0f;
+
+    // // punctuation.
+    // glyph_widths[' '] = 5.0f / glyph_size;
+	// glyph_widths['!'] = 5.0f / glyph_size;
+    // glyph_widths['"'] = 7.0f / glyph_size;
+
+    // // numbers.
+    // glyph_widths['0'] = 10.0f / glyph_size;
+    // glyph_widths['1'] = 9.0f / glyph_size;
+    // glyph_widths['2'] = 10.0f / glyph_size;
+    // glyph_widths['3'] = 9.0f / glyph_size;
+    // glyph_widths['4'] = 9.0f / glyph_size;
+    // glyph_widths['5'] = 10.0f / glyph_size;
+    // glyph_widths['6'] = 10.0f / glyph_size;
+    // glyph_widths['7'] = 9.0f / glyph_size;
+    // glyph_widths['8'] = 9.0f / glyph_size;
+    // glyph_widths['9'] = 10.0f / glyph_size;
+
+    // glyph_widths[':'] = 4.0f / glyph_size;
+    // glyph_widths[';'] = 4.0f / glyph_size;
+
+    // // capital letters.
+    // glyph_widths['A'] = 11.0f / glyph_size;
+    // glyph_widths['B'] = 12.0f / glyph_size;
+    // glyph_widths['C'] = 12.0f / glyph_size;
+    // glyph_widths['D'] = 12.0f / glyph_size;
+    // glyph_widths['E'] = 11.0f / glyph_size;
+    // glyph_widths['F'] = 10.0f / glyph_size;
+    // glyph_widths['G'] = 13.0f / glyph_size;
+    // glyph_widths['H'] = 12.0f / glyph_size;
+    // glyph_widths['I'] = 5.0f / glyph_size;
+    // glyph_widths['J'] = 9.0f / glyph_size;
+    // glyph_widths['K'] = 12.0f / glyph_size;
+    // glyph_widths['L'] = 10.0f / glyph_size;
+    // glyph_widths['M'] = 15.0f / glyph_size;
+    // glyph_widths['N'] = 12.0f / glyph_size;
+    // glyph_widths['O'] = 13.0f / glyph_size;
+    // glyph_widths['P'] = 12.0f / glyph_size;
+    // glyph_widths['Q'] = 13.0f / glyph_size;
+    // glyph_widths['R'] = 12.0f / glyph_size;
+    // glyph_widths['S'] = 11.0f / glyph_size;
+    // glyph_widths['T'] = 10.0f / glyph_size;
+    // glyph_widths['U'] = 12.0f / glyph_size;
+    // glyph_widths['V'] = 10.0f / glyph_size;
+    // glyph_widths['W'] = 16.0f / glyph_size;
+    // glyph_widths['X'] = 11.0f / glyph_size;
+    // glyph_widths['Y'] = 11.0f / glyph_size;
+    // glyph_widths['Z'] = 11.0f / glyph_size;
+
+    // // lowercase letters.
+    // glyph_widths['a'] = 11.0f / glyph_size;
+    // glyph_widths['b'] = 11.0f / glyph_size;
+    // glyph_widths['c'] = 9.0f / glyph_size;
+    // glyph_widths['d'] = 12.0f / glyph_size;
+    // glyph_widths['e'] = 11.0f / glyph_size;
+    // glyph_widths['f'] = 10.0f / glyph_size;
+    // glyph_widths['g'] = 13.0f / glyph_size;
+    // glyph_widths['h'] = 12.0f / glyph_size;
+    // glyph_widths['i'] = 5.0f / glyph_size;
+    // glyph_widths['j'] = 9.0f / glyph_size;
+    // glyph_widths['k'] = 12.0f / glyph_size;
+    // glyph_widths['l'] = 10.0f / glyph_size;
+    // glyph_widths['m'] = 15.0f / glyph_size;
+    // glyph_widths['n'] = 12.0f / glyph_size;
+    // glyph_widths['o'] = 13.0f / glyph_size;
+    // glyph_widths['p'] = 12.0f / glyph_size;
+    // glyph_widths['q'] = 13.0f / glyph_size;
+    // glyph_widths['r'] = 12.0f / glyph_size;
+    // glyph_widths['s'] = 11.0f / glyph_size;
+    // glyph_widths['t'] = 10.0f / glyph_size;
+    // glyph_widths['u'] = 12.0f / glyph_size;
+    // glyph_widths['v'] = 10.0f / glyph_size;
+    // glyph_widths['w'] = 16.0f / glyph_size;
+    // glyph_widths['x'] = 11.0f / glyph_size;
+    // glyph_widths['y'] = 11.0f / glyph_size;
+    // glyph_widths['z'] = 11.0f / glyph_size;
+
+	
 }
 
 // drawing image to UI etc.
-Text::Text(std::string font, float scale)
+Text::Text(std::string font, int glyph_size) : glyph_size(glyph_size)
 {
-    Text::scale = scale;
     unsigned char *data = stbi_load((TEXTURES_PATH + font).data(), &width, &height, &component, STBI_rgb_alpha);
     if (!data)
     {
@@ -564,53 +608,63 @@ Text::Text(std::string font, float scale)
     tweak_glyphs();
 }
 
+// https://rosettacode.org/wiki/Word_wrap#C++
+const char* wrap(const char *text, size_t line_length)
+{
+    std::istringstream words(text);
+    std::ostringstream wrapped;
+    std::string word;
+
+    if (words >> word)
+    {
+        wrapped << word;
+        size_t space_left = line_length - word.length();
+        while (words >> word)
+        {
+            if (space_left < word.length() + 1)
+            {
+                wrapped << '\n' << word;
+                space_left = line_length - word.length();
+            }
+            else
+            {
+                wrapped << ' ' << word;
+                space_left -= word.length() + 1;
+            }
+        }
+    }
+    return wrapped.str().data();
+}
+
 // https://github.com/capnramses/antons_opengl_tutorials_book/blob/9a117a649ae4d21d68d2b75af5232021f5957aac/26_bitmap_fonts/main.cpp#L368
 void Text::draw(std::string content, float at_x, float at_y, int shader)
 {
     if (content.size() == 0)
     {
+        // no need to draw text that doesn't exist, so return.
         return;
     }
 
-    char* str               = content.data();
-    const int len           = strlen(str);
-    float in_x              = -1.0f + (at_x / (float)WINDOW_WIDTH   * 2);
-    const float x_align     = in_x;
-    float in_y              =  1.0f - (at_y / (float)WINDOW_HEIGHT  * 2);
-    int glyph_size          = 64;                   // could set width/height of glyph seperately if wanted to have rectangles etc.
-    int cols_count          = width / glyph_size;   // prob dont rlly need to tho.
+    int text_speed          = 7;
+    
+    int box_width           = (scale * std::floor<int>(WINDOW_WIDTH / ((int)scale * glyph_size))) + 1;
+    scale                   = scale * glyph_size;
+    int cols_count          = width / glyph_size;
     int rows_count          = height / glyph_size;
+    float in_x              = -1.0f + (at_x / (float)WINDOW_WIDTH   * 2);
+    float in_y              =  1.0f - (at_y / (float)WINDOW_HEIGHT  * 2);
+    const float x_align     = in_x; // reference x axis position.
+    const char* str         = wrap(content.data(), 90);
+    const int len           = strlen(str);
     const size_t size       = len * 12 * sizeof(float);
-    std::vector<float> vertices(size);  // prob better to store these as vectors rather than using malloc(?)
-    std::vector<float> texcoords(size); // TODO: test/find out if malloc array is faster for this than vector.
+    std::vector<float> vertices(size);  // prob better to store these as vectors rather than using malloc(?) safer.
+    std::vector<float> texcoords(size);
 
-    int box_width   = 24;
-    int line_length = 0;
-    int word_length = 0;
+    // std::default_random_engine generator;
+    // std::uniform_real_distribution<double> distribution(-0.05, 0.05);
 
-    for (int i = 0; i < len; ++i)
+    for (int i = 0; i < position; ++i)
     {
-        // get length of current word.
-        word_length++;
-        if (str[i] == ' ')
-        {
-            word_length = 0;
-        }
-
-        // insert a line break if a word will go over the width of the textbox.
-        if (line_length + word_length > box_width)
-        {
-            str[i - word_length] = '\n';
-        }
-
-        // linebreak.
-        if (str[i] == '\n')
-        {
-            in_x        = x_align - (0.8f * scale / (float)WINDOW_WIDTH);
-            in_y        -= scale / (float)WINDOW_HEIGHT;
-            line_length = 0;
-        }
-
         // get row and column of the ascii character.
 		int current_col = (str[i] - ' ') % cols_count;
 		int current_row = (str[i] - ' ') / rows_count;
@@ -624,17 +678,14 @@ void Text::draw(std::string content, float at_x, float at_y, int shader)
         // positions.
         float pos_x1 = in_x;
         float pos_x2 = pos_x1   + scale / (float)WINDOW_WIDTH;
-		float pos_y1 = in_y     - scale / (float)WINDOW_HEIGHT * 0.2f; // * glyph_y_offsets[str[i]]
+		float pos_y1 = in_y     - scale / (float)WINDOW_HEIGHT * 0.0f;
         float pos_y2 = pos_y1   - scale / (float)WINDOW_HEIGHT;
 
         // move letter on to the right by glyph width.
-        if (i + 1 < len)
+        if (i + 1 < position)
         {
-			in_x += 0.8f * scale / (float)WINDOW_WIDTH; // * glyph_widths[str[i]]
+			in_x += 0.4f * scale / (float)WINDOW_WIDTH; // * glyph_widths[str[i]]
 		}
-
-        // added letter, so increment line length count.
-        line_length++;
 
         // vertex positions to draw char at.
         vertices.insert(vertices.begin() + (i * 12), {
@@ -647,7 +698,28 @@ void Text::draw(std::string content, float at_x, float at_y, int shader)
             tex_x1, tex_y1, tex_x1, tex_y2, tex_x2, tex_y2, // tri 1
             tex_x1, tex_y1, tex_x2, tex_y2, tex_x2, tex_y1  // tri 2.
         });
+
+        // linebreak.
+        if (str[i] == '\n')
+        {
+            in_x = x_align;
+            in_y -= scale / (float)WINDOW_HEIGHT;
+        }
     }
+
+    // after drawing, increment position for gradual drawing of text.
+    if (position < len)
+    {
+        if (position + text_speed > len)
+        {
+            position = len;
+        }
+        else
+        {
+            position += text_speed;
+        }
+    }
+    
 
     // bind VAO and both VBOs.
     glBindVertexArray(VAO);

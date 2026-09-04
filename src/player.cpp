@@ -6,7 +6,6 @@
 
 using glm::vec2;
 using glm::vec3;
-using std::cout;
 
 Player::Player()
 {
@@ -32,17 +31,27 @@ Player::Player()
     }
 
     // set level on load.
-    current_level   = 1;
-    sound           = Sound("jump_1", SAMPLE_RATE, false, 0.3f);
+    current_level       = 1;
+    jump_sound          = Sound("jump_0", SAMPLE_RATE, false, 1.0f);
+    boosted_jump_sound  = Sound("jump_1", SAMPLE_RATE, false, 0.1f);
 }
 
 float last_x = 0.0f;
 
 void Player::update(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, Camera &camera, float dt)
 {
-    glm::vec3 prev      = position;
-    vec2 input          = vec2(HORIZONTAL, VERTICAL);
+
+
+
+
+    input               = glm::vec2(glm::clamp(HORIZONTAL + HORIZONTAL_, -1.0f, 1.0f), glm::clamp(VERTICAL + VERTICAL_, -1.0f, 1.0f));
     vec3 slope_angle    = get_slope(level->colliders);
+    glm::vec3 prev      = position;
+    coyote_time_count   -= dt;
+    jump_buffer_count   -= dt;
+
+
+    
 
     if (input.x != 0.0f)
     {
@@ -53,42 +62,43 @@ void Player::update(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, C
         last_x = 0.0f;
     }
 
-    coyote_time_count -= dt;
-    jump_buffer_count -= dt;
-
+    // reset coyote time and set y velocity to 0 while player is grounded.
     if (grounded)
     {
         coyote_time_count   = coyote_time;
         velocity_y          = 0.0f;
         jumping             = false;
+        model.animations[ANIMATION_JUMP].reset();
     }
     else
     {
-        velocity_y  = glm::clamp(velocity_y - GRAVITY, -MAX_FALL_SPEED, MAX_FALL_SPEED);
+        // player is in air, so apply gravity to y axis velocity.
+        velocity_y = glm::clamp(velocity_y - (GRAVITY * dt), -JUMP_POWER, JUMP_POWER + JUMP_BOOST);
     }
 
     // jump button down.
-    if ((SPACE_PRESSED == 1) && (SPACE_PRESSED_PREV == 0))
+    if ((SPACE_PRESSED == 1 && SPACE_PRESSED_PREV == 0) || (GAMEPAD_BUTTON_A == 1 && GAMEPAD_BUTTON_A_PREV == 0))
     {
         jump_buffer_count = jump_buffer;
     }
 
-    if ((coyote_time_count > 0.0f) && (jump_buffer_count > 0.0f))
+    if ((coyote_time_count > 0.0f) && (jump_buffer_count >= 0.0f))
     {
-        jump();
+        jump(JUMP_POWER, dt);
     }
 
-    // jump button up.
-    if ((SPACE_PRESSED == 0) && (SPACE_PRESSED_PREV == 1))
+    // when jump button is released while velocity y is increasing, cut it short.
+    if (SPACE_PRESSED == -1 || GAMEPAD_BUTTON_A == -1)
     {
-        float jump_amount   = glm::sqrt(-2.0f * GRAVITY * jump_height * jump_hold);
-        jumping             = true;
+        float reduced_jump = jump_hold * (JUMP_POWER + (GRAVITY * dt));
 
-        if (jumping == true && (velocity_y - jump_amount) > 0)
+        if (jumping && (velocity_y - reduced_jump) > 0.0f)
         {
-            velocity_y = jump_amount;
+            velocity_y = reduced_jump;
         }
     }
+
+
 
     // get facing angle, only if input is non-zero.
     if (!is_vec2_zero(input))
@@ -113,9 +123,10 @@ void Player::update(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, C
     {
         target_animation = ANIMATION_JUMP;
     }
+    // std::cout << glm::length(input) << "\n";
 
-    movement_h      = glm::mix(movement_h,        glm::length(input)  * MAX_SPEED     * dt,   ACCEL * dt);
-    animation_speed = glm::mix(animation_speed,   glm::length(input)  * ANIM_SPEED    * dt,   ACCEL * dt);
+    movement_h      = glm::mix(movement_h,      glm::length(input) * MAX_SPEED,     ACCEL * dt);
+    animation_speed = glm::mix(animation_speed, glm::length(input) * ANIM_SPEED,    ACCEL * dt);
     
     // some weirdness here, i think bcos we get the slope using the colliders position *before* movement is done, so its like 1 frame behind
     // i think the slope adjustment has to happen after the initial, non adjusted movement.
@@ -127,22 +138,23 @@ void Player::update(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, C
     
     */
 
-
     vec3 direction      = glm::normalize(rotate(glm::vec3(0.0f, 0.0f, 1.0f), angle_facing - glm::half_pi<float>(), up));
-    vec3 horizontal     = glm::normalize(glm::cross(direction, slope_angle)) * movement_h;
-    vec3 vertical       = (vec3(0.0f, velocity_y, 0.0f) + slope_angle) * dt;
-    move(horizontal + vertical, level, skybox, bgm);
+    vec3 horizontal     = (glm::normalize(glm::cross(direction, slope_angle))) * (movement_h * dt);
+    vec3 vertical       = (slope_angle + vec3(0.0f, velocity_y, 0.0f)) * dt;
+
+
+    move(horizontal + vertical, level, skybox, bgm, dt);
 
     // out of bounds collision / respawn.
     if (collider[COLLIDER_MAIN].position.y < -100.0f)
     {
         camera.distance_offset = 6.0f;
-        respawn(level, skybox, bgm);
+        respawn(level, skybox, bgm, dt);
     }
 
     // update camera & model.
     camera_lookat   = vec3(position.x, position.y + (HEIGHT * 0.8f), position.z);
-    auto_cam_yaw    = glm::mix(auto_cam_yaw, glm::sqrt(glm::length(glm::vec2(position.x - prev.x, position.z - prev.z))) * movement_h * last_x, 1.0f);
+    auto_cam_yaw    = glm::mix(auto_cam_yaw, glm::sqrt(glm::length(glm::vec2(position.x - prev.x, position.z - prev.z))) * movement_h * last_x * dt, 1.0f);
     model_rotation  = glm::slerp(model_rotation, glm::quat(vec3(0.0f, angle_facing, 0.0f)), TURN_SPEED * dt);
     model.update_animations(ANIM_SPEED * dt, target_animation);
 }
@@ -163,7 +175,7 @@ void Player::draw(int mesh_shader, int line_shader, Camera camera, bool draw_col
 }
 
 // load level and set player position.
-void Player::respawn(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm)
+void Player::respawn(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, float dt)
 {
     if (level->index != current_level)
     {
@@ -171,25 +183,38 @@ void Player::respawn(std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm)
         level->load_level(current_level, skybox, bgm);
     }
     
-    move(glm::vec3(respawn_position.x, respawn_position.y + 10.0f, respawn_position.z) - position, level, skybox, bgm);
+    move(glm::vec3(respawn_position.x, respawn_position.y + 10.0f, respawn_position.z) - position, level, skybox, bgm, dt);
 }
 
-void Player::jump()
+void Player::jump(float power, float dt)
 {
     // std::cout << position.x << ", " << position.y << ", " << position.z << "\n";
     if (model.animations.size() > ANIMATION_JUMP)
     {
         model.animations[ANIMATION_JUMP].reset();
     }
-    sound.position      = 0;    // reset jump sound to beginning (ie play it).
-    coyote_time_count   = 0.0f;
+
+    // reset jump sound back to 0 (ie play it).
+    if (power == JUMP_POWER)
+    {
+        jump_sound.position = 0;
+        jumping             = true;
+        coyote_time_count   = 0.0f;
+    }
+    else if (power == JUMP_POWER + JUMP_BOOST)
+    {
+        boosted_jump_sound.position = 0;
+        jumping                     = false;
+        coyote_time_count           -= dt;
+    }
+
     jump_buffer_count   = 0.0f;
-    velocity_y          = glm::sqrt(-100.0f * -GRAVITY * jump_height);
-    jumping             = true;
+    velocity_y          = power + (GRAVITY * dt);
+    
 }
 
 // move player in a direction, and calculate collision to adjust.
-void Player::move(glm::vec3 movement, std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm)
+void Player::move(glm::vec3 movement, std::unique_ptr<Level> &level, Skybox &skybox, Sound &bgm, float dt)
 {
     // first move the collider to the desired position.
     collider[COLLIDER_MAIN].move(position + movement);
@@ -208,35 +233,80 @@ void Player::move(glm::vec3 movement, std::unique_ptr<Level> &level, Skybox &sky
             
             if (collision.collided)
             {
-                if (level->colliders[j]->is_trigger)
+
+                switch (level->colliders[j]->type)
                 {
-                    // can make this a conditional at some point to have more than 1 type of trigger response.
-                    // rn it is just level changing.
-                    current_level       = level->colliders[j]->target_level;
-                    respawn_position    = level->colliders[j]->spawn;
-                    respawn(level, skybox, bgm);
-                }
-                else
-                {
+                case Collider::Type::SOLID:
                     // check if the collision is sufficiently below the player.
                     if (glm::angle(glm::normalize(collision.normal), up) > GROUND_MIN)
                     {
                         grounded = true;
                     }
 
+                    // if jumping upwards, and you hit head on a ceiling, set upward velocity to 0.
+                    if (glm::angle(glm::normalize(collision.normal), up) < 0.5f && velocity_y > 0.0f)
+                    {
+                        velocity_y = 0.0f;
+                    }
+
                     // move collider outside of collision, then increment count to check the new position.
-                    // collider[COLLIDER_MAIN].move(collider[COLLIDER_MAIN].position - (collision.normal * collision.depth));
+                    to_move += (collision.normal * collision.depth);
+                    break;
 
+                case Collider::Type::WARP:
+                    current_level       = level->colliders[j]->target_level;
+                    respawn_position    = level->colliders[j]->spawn;
+                    respawn(level, skybox, bgm, dt);
+                    break;
 
-                    // if (collision.depth > deepest)
-                    // {
-                    //     deepest = collision.depth;
-                        to_move += (collision.normal * collision.depth);
-            
-                    // }
-                    
-                    
+                case Collider::Type::BOUNCE:
+                    grounded            = false;
+                    target_animation    = ANIMATION_JUMP;
+                    jump(JUMP_POWER + JUMP_BOOST, dt);
+                    break;
+                
+                default:
+                    std::cout << "Error: collider has no Type.\n";
+                    break;
                 }
+
+
+                // if (level->colliders[j]->is_trigger)
+                // {
+                //     if (level->colliders[j]->type == 0)
+                //     {
+                //         current_level       = level->colliders[j]->target_level;
+                //         respawn_position    = level->colliders[j]->spawn;
+                //         respawn(level, skybox, bgm, dt);
+                //     }
+                //     else if (level->colliders[j]->type == 1)
+                //     {
+                //         grounded            = false;
+                //         target_animation    = ANIMATION_JUMP;
+                //         jump(JUMP_POWER + JUMP_BOOST, dt);
+                //     }
+                // }
+                // else
+                // {
+                //     // check if the collision is sufficiently below the player.
+                //     if (glm::angle(glm::normalize(collision.normal), up) > GROUND_MIN)
+                //     {
+                //         grounded = true;
+                //     }
+
+                //     // move collider outside of collision, then increment count to check the new position.
+                //     // collider[COLLIDER_MAIN].move(collider[COLLIDER_MAIN].position - (collision.normal * collision.depth));
+
+
+                //     // if (collision.depth > deepest)
+                //     // {
+                //     //     deepest = collision.depth;
+                //         to_move += (collision.normal * collision.depth);
+            
+                //     // }
+                    
+                    
+                // }
                 // collisions.push_back(collision);
                 ++collision_count;
             }  
@@ -253,6 +323,7 @@ void Player::move(glm::vec3 movement, std::unique_ptr<Level> &level, Skybox &sky
         //     collider[COLLIDER_MAIN].move(collider[COLLIDER_MAIN].position - (collision.normal * collision.depth));
         // }
 
+        // collider[COLLIDER_MAIN].move(collider[COLLIDER_MAIN].position - to_move);
         collider[COLLIDER_MAIN].move(collider[COLLIDER_MAIN].position - to_move);
 
         if (collision_count == 0)

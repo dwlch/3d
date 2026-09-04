@@ -12,7 +12,7 @@
 struct Textbox
 {
     std::string content;
-    Text text = Text(FONT_MAIN, 48.0f);
+    Text text = Text("font.bmp", 32);
     void draw(float x, float y, int shader);
 };
 
